@@ -1,0 +1,55 @@
+@use '@css-values' as *;
+@use '@css-placeholders' as *;
+
+:host {
+    @extend %fullWidth, %flexBetween;
+    align-items: center;
+    margin-top: $medium-margin;
+    padding-bottom: $medium-margin;
+
+    &>button {
+        @extend %reset, %hoverScale;
+        width: $pagination-arrow-width;
+        background: none;
+        cursor: pointer;
+        border: none;
+        &.prev {
+            transform: rotate(-90deg);
+        }
+
+        &.next {
+            transform: rotate(90deg);
+        }
+
+        &[disabled] {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        img {
+            width: 100%;
+        }
+    }
+}
+
+ul {
+    @extend %reset, %flexRow;
+    list-style: none;
+
+    li {
+        transition: scale 1s;
+        margin: 0 $small-margin;
+
+        &.current {
+            scale: 1.3;
+            z-index: 2;
+        }
+
+        &.dots {
+            margin: 0;
+        }
+        button{
+            cursor: pointer;
+        }
+    }
+}

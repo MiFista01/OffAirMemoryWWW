@@ -1,0 +1,43 @@
+<div class="editor">
+  <ngx-editor-menu
+    [editor]="editor"
+    [toolbar]="toolbar"
+    *ngIf="useToolbar" />
+  <ngx-editor
+    [editor]="editor"
+    [(ngModel)]="html"
+    [placeholder]="placeholder | translate">
+  </ngx-editor>
+</div>
+<div class="btns-container">
+  <div class="reply-to" *ngIf="replyToUser">
+    <p class="font-small">
+      {{'news.headers.replyTo' | translate}}<br>{{replyToUser}}
+    </p>
+  </div>
+  <div class="btns">
+    <div class="img-btn" *ngIf="useImg">
+      <input
+        type="file"
+        #imgUpload
+        accept="image/*, .jpg, .jpeg, .png, .gif, .webp"
+        (change)="uploadImg($event)">
+      <button
+        (click)="imgUpload.click()"
+        [disabled]="!isEditorFocused && formBtnsToggle">
+        {{imgPlaceholder | translate}}
+        <div class="completed"></div>
+      </button>
+    </div>
+    <button
+      (click)="submit()"
+      [disabled]="formBtnsToggle">
+      {{submitPlaceholder | translate}}
+      <div class="completed"></div>
+    </button>
+    <ng-content select="[btns]"></ng-content>
+  </div>
+  <div class="resultMsg">
+    <ng-content select="[resultMsg]"></ng-content>
+  </div>
+</div>

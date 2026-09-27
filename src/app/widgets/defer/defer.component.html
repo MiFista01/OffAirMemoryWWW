@@ -1,0 +1,13 @@
+@defer (when isValidData) {
+<div class="defer-content">
+    <div class="def-anim" [@deferAnimation]>
+        <ng-content select="[content]"></ng-content>
+    </div>
+</div>
+} @placeholder {
+<div class="defer-placeholder">
+    <div class="def-anim" [@deferAnimation]>
+        <ng-content select="[placeholder]"></ng-content>
+    </div>
+</div>
+}

@@ -1,0 +1,91 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "outDir": "./dist/out-tsc",
+    "baseUrl": "./src",
+    "paths": {
+      "@mocks": [
+        "app/mocks"
+      ],
+      "@interface": [
+        "app/interfaces"
+      ],
+      "@abstracts": [
+        "app/abstracts"
+      ],
+      "@const": [
+        "app/const"
+      ],
+      "@services": [
+        "app/services"
+      ],
+      "@pipes": [
+        "app/pipes"
+      ],
+      "@resolvers": [
+        "app/resolvers"
+      ],
+      "@directives": [
+        "app/directives"
+      ],
+      "@env": [
+        "environments/environment.ts"
+      ],
+      "@widgets": [
+        "app/widgets"
+      ],
+      "@animations": [
+        "app/animations"
+      ],
+      "@components": [
+        "app/components"
+      ],
+      "@pages": [
+        "app/pages"
+      ],
+      "@guards": [
+        "app/guards"
+      ],
+      "@routes": [
+        "app/routes"
+      ],
+      "@css-values": [
+        "values.scss"
+      ],
+      "@css-placeholders": [
+        "placeholders.scss"
+      ],
+      "@css-mixins": [
+        "mixins.scss"
+      ],
+      "@css-themes": [
+        "themes/index.scss"
+      ]
+    },
+    "strict": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "declaration": false,
+    "experimentalDecorators": true,
+    "moduleResolution": "bundler",
+    "importHelpers": true,
+    "target": "ES2022",
+    "module": "ES2022",
+    "lib": [
+      "ES2022",
+      "dom"
+    ]
+  },
+  "angularCompilerOptions": {
+    "enableI18nLegacyMessageIdFormat": false,
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true,
+    "strictTemplates": true
+  }
+}

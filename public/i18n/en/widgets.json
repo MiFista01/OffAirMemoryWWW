@@ -1,0 +1,14 @@
+{
+    "widgets": {
+        "dndUpload": {
+            "fileUploaded": "File uploaded",
+            "fileLimitExceeded": "File limit exceeded",
+            "fileLimitExceededDescription": "Maximum {{fileLimit}} files allowed. Your selection was reduced to the limit.",
+            "uploadSuccess": "Files uploaded successfully",
+            "uploadFailed": "Failed to upload files",
+            "uploadError": "Upload Error",
+            "uploadErrorDescription": "Failed to upload files",
+            "uploadFailedDescription": "Failed to upload files"
+        }
+    }
+}

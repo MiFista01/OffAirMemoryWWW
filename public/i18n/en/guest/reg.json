@@ -1,0 +1,29 @@
+{
+  "form": {
+    "passwordAgain": "Password again",
+    "emailAgain": "Email again",
+    "passwordStrength": {
+      "0": "Password must be at least medium strength",
+      "1": "Very Weak",
+      "2": "Weak",
+      "3": "Fair",
+      "4": "Good",
+      "5": "Strong",
+      "6": "Very Strong"
+    },
+    "rules": {
+      "text": "By registering, you confirm that you have read the ",
+      "link": "Terms of Service",
+      "and": " and agree to them!"
+    },
+    "submit": "Register",
+    "passwordAgainPlaceholder": "Passwords must match"
+  },
+  "regFormKey": {
+    "201": "Successfully registered.",
+    "422": "Validation error. Please check all fields and try again.",
+    "409": "User already exists.",
+    "400": "Bad request. Try again later or contact support.",
+    "500": "Internal server error. Try again later or contact support."
+  }
+}

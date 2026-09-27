@@ -1,0 +1,11 @@
+{
+    "settings": {
+        "title": "Settings",
+        "appearance": "Appearance"
+    },
+    "appearance": {
+        "theme": "Theme",
+        "layout": "Layout",
+        "reverseLayout": "Mirror layout"
+    }
+}

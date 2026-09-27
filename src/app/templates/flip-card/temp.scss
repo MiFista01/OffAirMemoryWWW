@@ -1,0 +1,28 @@
+.flip-card-base {
+    @include flipCardBase();
+    @extend %flipCardHover;
+
+    p {
+        @extend %reset;
+    }
+
+    .flip-card-inner {
+        @extend %flipCardInner;
+    }
+
+    .flip-card-front {
+        @include flipCardFront;
+        //TODO: Add front content styles here
+    }
+
+    .flip-card-back {
+        @include flipCardBack;
+        //TODO: Add back content styles here
+    }
+}
+
+// Example usage:
+// 1. Copy this SCSS to your component styles
+// 2. Replace 'flip-card-base' with your component class name
+// 3. Add your custom content styles in TODO sections
+// 4. Make sure placeholders are imported in your main SCSS file

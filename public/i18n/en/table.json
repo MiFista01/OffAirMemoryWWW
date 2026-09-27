@@ -1,0 +1,7 @@
+{
+    "tableHeaders": {
+        "name": "Name",
+        "createdAt": "Created at",
+        "actions": "Actions"
+    }
+}

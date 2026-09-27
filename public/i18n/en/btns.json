@@ -1,0 +1,23 @@
+{
+  "btns": {
+    "create": "Create",
+    "delete": "Delete",
+    "save": "Save",
+    "search": "Search",
+    "accept": "Accept",
+    "reject": "Reject",
+    "edit": "Edit",
+    "clear": "Clear",
+    "addImage": "Add image",
+    "close": "Close",
+    "open": "Open",
+    "add": "Add",
+    "remove": "Remove",
+    "submit": "Submit",
+    "send": "Send",
+    "choose": "Choose",
+    "upload": "Upload",
+    "cancel": "Cancel",
+    "update": "Update"
+  }
+}

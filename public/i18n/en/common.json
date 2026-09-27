@@ -1,0 +1,15 @@
+{
+    "select": "Select",
+    "comingSoon": "Coming soon",
+    "username": "Username",
+    "email": "Email",
+    "password": "Password",
+    "author": "Author",
+    "notFound": "Not found",
+    "yes": "Yes",
+    "no": "No",
+    "none": "None",
+    "createdAt": "Created at",
+    "today": "Today",
+    "noDescription": "No description"
+}

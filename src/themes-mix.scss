@@ -1,0 +1,62 @@
+@use '@css-values' as *;
+@use '@css-themes' as *;
+
+$themes-colors: (
+  "blue": $blue-theme,
+  "green": $green-theme,
+  "red": $red-theme,
+  "black": $black-theme,
+  "classic": $classic-theme,
+  "dark": $dark-theme,
+);
+
+$themes-layouts: (
+  "compact": $compact-theme,
+  "comfortable": $comfortable-theme,
+);
+
+@mixin theme-colors($theme) {
+  @each $key, $value in map-get($themes-colors, $theme) {
+    --#{$key}: #{$value};
+  }
+}
+
+@mixin theme-layouts($theme) {
+  @each $key, $value in map-get($themes-layouts, $theme) {
+    --#{$key}: #{$value};
+  }
+}
+:root {
+  @include theme-colors('blue');
+  
+  * {
+    transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+  }
+}
+app-user {
+  @each $theme-name, $theme-map in $themes-colors {
+    &[data-color="#{$theme-name}"] {
+      @include theme-colors($theme-name);
+    }
+  }
+  @each $theme-name, $theme-map in $themes-layouts {
+    &[data-layout="#{$theme-name}"] {
+      @include theme-layouts($theme-name);
+    }
+  }
+  &[data-reverse-layout="true"] {
+    .layout {
+      flex-direction: row-reverse;
+      .content {
+        margin-right: $standard-margin;
+      }
+    }
+  }
+  &[data-reverse-layout="false"] {
+    .layout {
+      .content {
+        margin-left: $standard-margin;
+      }
+    }
+  }
+}

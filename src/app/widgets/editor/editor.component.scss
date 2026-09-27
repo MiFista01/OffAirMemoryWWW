@@ -1,0 +1,116 @@
+@use '@css-values' as *;
+@use '@css-placeholders' as *;
+@use '@css-mixins' as *;
+
+:host {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 0 auto;
+    padding: $standard-padding;
+    box-sizing: border-box;
+    position: -webkit-sticky;
+}
+
+.img-btn {
+    @extend %flexRow;
+    flex-grow: 1;
+    min-width: fit-content;
+
+    input {
+        display: none;
+    }
+}
+
+::ng-deep {
+    .NgxEditor__MenuBar {
+        position: sticky;
+        position: -webkit-sticky;
+        z-index: 2;
+        top: 0px;
+    }
+
+    .NgxEditor__ImageWrapper {
+        border: none !important;
+
+        .NgxEditor__ResizeHandle {
+            display: none !important;
+        }
+    }
+}
+
+.editor {
+    @extend %flexColumn, %fullWidth;
+
+    ::ng-deep {
+        .NgxEditor__Content {
+            p {
+                @extend .font-medium;
+            }
+
+            h1 {
+                @extend .font-large;
+            }
+
+            h2 {
+                @extend .font-big;
+            }
+
+            h3 {
+                @extend .font-medium;
+            }
+
+            ul,
+            ol {
+                @extend .font-medium;
+            }
+
+            a {
+                @extend .font-medium;
+            }
+        }
+    }
+}
+
+.btns-container {
+    @extend %fullWidth;
+    margin-top: $big-margin;
+}
+
+.btns {
+    @extend %flexRow, %fullWidth;
+    align-items: center;
+    gap: $standard-gap;
+
+    &::ng-deep {
+        button:disabled {
+            pointer-events: none !important;
+            transform: scale(0.90) !important;
+            opacity: 0.5 !important;
+        }
+    }
+    button {
+        margin-top: 0;
+        transition-duration: 0.3s;
+        position: relative;
+        overflow: hidden;
+
+
+        .completed {
+            position: absolute;
+            top: 0%;
+            bottom: 0%;
+            left: 0%;
+            width: 100%;
+            background-color: #00f9004d;
+            opacity: 0;
+            transition-duration: 0.3s;
+            pointer-events: none;
+
+            &.active {
+                opacity: 1;
+            }
+
+        }
+    }
+}

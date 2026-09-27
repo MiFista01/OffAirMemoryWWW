@@ -1,0 +1,10 @@
+{
+    "errors": {
+        "invalidImageType": "Kehtetu pildi formaat",
+        "404": "API ei leitud. Palun pöördu abiteenusele.",
+        "403": "Keelatud päring.",
+        "409": "Konflikti päring.",
+        "401": "Autoriseerimata.",
+        "500": "Sisemine serveri viga."
+    }
+}

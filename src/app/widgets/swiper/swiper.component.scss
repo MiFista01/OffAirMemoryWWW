@@ -1,0 +1,36 @@
+::ng-deep swiper-container {
+
+    swiper-slide {
+        transition: transform var(--swiper-transition-duration, 300ms) !important;
+        align-self: center;
+    }
+
+    &[effect="cube"] {
+        swiper-slide {
+            pointer-events: none;
+        }
+
+        swiper-slide.swiper-slide-prev,
+        swiper-slide.swiper-slide-next {
+            z-index: 0;
+        }
+
+        swiper-slide.swiper-slide-active {
+            z-index: 50;
+            pointer-events: auto;
+        }
+    }
+
+    &[effect="fade"] {
+        swiper-slide {
+            transition: opacity var(--swiper-transition-duration, 300ms) !important;
+            opacity: 0 !important;
+            pointer-events: none;
+        }
+
+        swiper-slide.swiper-slide-active {
+            opacity: 1 !important;
+            pointer-events: auto;
+        }
+    }
+}

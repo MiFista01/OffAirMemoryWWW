@@ -1,0 +1,14 @@
+<div class="floating-input">
+    <input
+      class="font-medium"
+      type="text"
+      id="name"
+      name="name"
+      [(ngModel)]="value">
+    <label
+      class="font-medium"
+      for="name"
+      [ngClass]="{'move': value.length > 0}">
+        {{label}}
+    </label>
+</div>

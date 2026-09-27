@@ -1,0 +1,7 @@
+<div
+  class="loadbar"
+  [ngStyle]="{'height': height + 'px',}">
+    <div class="progress"></div>
+    <p *ngIf="showProgress && text">{{ text }}</p>
+    <p *ngIf="showProgress && !text">{{ progress }}%</p>
+</div>

@@ -1,0 +1,12 @@
+{
+    "authForm": {
+        "username": "Kasutajanimi",
+        "password": "Parool",
+        "login": "Logi sisse",
+        "reg": "Registreeru",
+        "passForget": "Unustasid parooli?"
+    },
+    "error": {
+        "401": "Vale kasutaja ja parool"
+    }
+}

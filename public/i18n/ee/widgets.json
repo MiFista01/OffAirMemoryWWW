@@ -1,0 +1,14 @@
+{
+    "widgets": {
+        "dndUpload": {
+            "fileUploaded": "Fail üles laaditud",
+            "fileLimitExceeded": "Failide piir ületatud",
+            "fileLimitExceededDescription": "Maksimaalne {{fileLimit}} faili lubatud. Teie valikut on vähendatud piiriks.",
+            "uploadSuccess": "Failid üles laaditud",
+            "uploadFailed": "Failide üleslaadimine ebaõnnestus",
+            "uploadError": "Faili üleslaadimise tõrge",
+            "uploadErrorDescription": "Failide üleslaadimine ebaõnnestus",
+            "uploadFailedDescription": "Failide üleslaadimine ebaõnnestus"
+        }
+    }
+}

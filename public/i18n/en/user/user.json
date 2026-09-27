@@ -1,0 +1,9 @@
+{
+  "user": {
+    "header": {
+      "profile": "Profile",
+      "settings": "Settings",
+      "logout": "Logout"
+    }
+  }
+}

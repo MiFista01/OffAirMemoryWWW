@@ -1,0 +1,23 @@
+.floating-input {
+    @extend %floatingInput;
+    margin-bottom: $large-margin;
+    input {
+        border: 1px solid #ccc;
+
+        &:focus {
+            border-color: #000;
+
+            &+label {
+                background: white;
+            }
+        }
+    }
+
+    label {
+        color: #666;
+
+        &.move {
+            background: white;
+        }
+    }
+}

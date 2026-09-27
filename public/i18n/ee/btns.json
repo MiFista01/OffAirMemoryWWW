@@ -1,0 +1,23 @@
+{
+  "btns": {
+    "create": "Loo",
+    "delete": "Kustuta",
+    "save": "Salvesta",
+    "search": "Otsi",
+    "accept": "Luba",
+    "reject": "Keela",
+    "edit": "Muuda",
+    "clear": "Tühjenda",
+    "addImage": "Pildi lisamine",
+    "close": "Sulge",
+    "open": "Ava",
+    "add": "Lisa",
+    "remove": "Eemalda",
+    "submit": "Saada",
+    "send": "Saada",
+    "choose": "Vali",
+    "upload": "Laadi",
+    "cancel": "Tühista",
+    "update": "Uuenda"
+  }
+}

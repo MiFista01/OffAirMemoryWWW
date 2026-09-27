@@ -1,0 +1,153 @@
+@use "@css-values" as *;
+@use "@css-mixins" as *;
+@use "@css-placeholders" as *;
+
+@import 'swiper/css/navigation';
+@import 'swiper/css/pagination';
+@import 'swiper/css/effect-fade';
+@import 'swiper/css/effect-cards';
+@import 'swiper/css/effect-coverflow';
+@import 'swiper/css/effect-flip';
+@import 'swiper/css/effect-cube';
+
+html,
+body {
+    @extend %resetScrollbar;
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    font-family: Verdana, Helvetica, Sans-Serif;
+    background-color: white;
+}
+
+* {
+    color: inherit;
+    color-scheme: normal;
+}
+
+.bold {
+    font-weight: bold;
+}
+
+.error {
+    border-bottom: 3px solid red !important;
+}
+
+.hidden {
+    display: none;
+}
+
+.status {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+
+    &.online {
+        background-color: #20c215;
+    }
+
+    &.offline {
+        background-color: #be0e0e;
+    }
+}
+
+.rotate {
+    transform: rotate(180deg);
+}
+
+.resetPadding {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+.darken {
+    background-color: hsla(0, 0%, 0%, 0.1);
+}
+
+.active {
+    background-color: rgba($color: #000000, $alpha: 0.1);
+    text-shadow: 0 0 2px rgba($color: #000000, $alpha: 1);
+    color: white !important;
+    margin-left: $standard-margin;
+    scale: 1.1;
+}
+
+.updated-border {
+    border-color: #20c215;
+}
+
+
+.p-tooltip-arrow {
+    display: none !important;
+}
+
+.response {
+    @extend %fullWidth;
+    text-align: center;
+    border: 1px solid;
+    padding: $standard-padding;
+    border-radius: $border-radius;
+}
+
+.res201,
+.res202 {
+    color: rgb(7, 172, 7) !important;
+    border-color: rgb(7, 172, 7) !important;
+    background-color: rgba($color: rgb(10, 117, 10), $alpha: 0.2) !important;
+}
+
+.res422 {
+    color: rgb(255, 166, 0) !important;
+    border-color: rgb(255, 166, 0) !important;
+    background-color: rgba($color: rgb(255, 166, 0), $alpha: 0.2) !important;
+}
+
+.res409 {
+    color: rgb(255, 100, 100) !important;
+    border-color: rgb(255, 100, 100) !important;
+    background-color: rgba($color: rgb(255, 100, 100), $alpha: 0.2) !important;
+}
+
+.res403 {
+    color: rgb(255, 75, 75) !important;
+    border-color: rgb(255, 75, 75) !important;
+    background-color: rgba($color: rgb(255, 75, 75), $alpha: 0.2) !important;
+}
+
+.res400 {
+    color: rgb(255, 50, 50) !important;
+    border-color: rgb(255, 50, 50) !important;
+    background-color: rgba($color: rgb(255, 50, 50), $alpha: 0.2) !important;
+}
+
+.res500 {
+    color: rgb(200, 0, 0) !important;
+    border-color: rgb(200, 0, 0) !important;
+    background-color: rgba($color: rgb(200, 0, 0), $alpha: 0.2) !important;
+}
+
+
+
+.p-dialog {
+    .p-dialog-header {
+        user-select: none;
+        cursor: move;
+    }
+
+    &.p-dragging {
+        user-select: none;
+
+        * {
+            user-select: none;
+        }
+    }
+
+    .p-dialog-content {
+        @extend %resetScrollbar;
+        overflow: auto;
+    }
+}

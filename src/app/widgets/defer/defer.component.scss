@@ -1,0 +1,13 @@
+@use '@css-mixins' as *;
+@use '@css-placeholders' as *;
+
+:host{
+    display: contents
+}
+
+.defer-content, .defer-placeholder {
+    @include defer(100%);
+}
+.def-anim{
+    @extend %fullWidth;
+}

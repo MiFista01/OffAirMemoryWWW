@@ -1,0 +1,41 @@
+<ng-container>
+  <div
+    class="lightbox-overlay"
+    [@fadeInOut]="isOpen ? 'visible' : 'hidden'"
+    (click)="close()">
+  </div>
+  <div
+    class="lightbox"
+    [@fadeInOut]="isOpen ? 'visible' : 'hidden'">
+    <div
+      class="lightbox-content"
+      [ngClass]="{'loaded': isOpen}">
+      <img
+        [@fadeInOut]="isOpen && i === index ? 'visible' : 'hidden'"
+        *ngFor="let item of openAlbum; let i = index"
+        [src]="item.src"
+        alt=""
+        loading="lazy"
+        (load)="onLoad($event, i)" />
+        <div class="lightbox-controls" *ngIf="openAlbum.length > 1">
+          <button
+            class="lightbox-control-prev"
+            (click)="prev()"
+            [disabled]="index <= 0">
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          <button
+            class="lightbox-control-close"
+            (click)="close()">
+            <i class="fas fa-times"></i>
+          </button>
+          <button
+            class="lightbox-control-next"
+            (click)="next()"
+            [disabled]="index >= openAlbum.length - 1">
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+    </div>
+  </div>
+</ng-container>

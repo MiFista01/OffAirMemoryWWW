@@ -1,0 +1,70 @@
+@use '@css-placeholders' as *;
+@use '@css-mixins' as *;
+@use '@css-values' as *;
+
+:host {
+    display: contents;
+}
+
+fieldset {
+    @include formBase(var(--form-width));
+    position: relative;
+    padding-top: $big-padding;
+    background-color: white;
+
+
+    &::ng-deep {
+        .fields {
+            @extend %flexRow, %fullWidth;
+            flex-wrap: wrap;
+
+            .floating-input {
+                margin-bottom: 0;
+                flex-grow: 1;
+            }
+
+        }
+
+        .floating-input {
+            @extend %floatingInput, %fullWidth;
+            margin-bottom: $large-margin;
+
+            input {
+                border: 1px solid #ccc;
+
+                &:focus {
+                    border-color: #000;
+
+                    &+label {
+                        background: white;
+                    }
+                }
+            }
+
+            label {
+                color: #666;
+
+                &.move {
+                    background: white;
+                }
+            }
+        }
+
+        app-editor {
+            @extend %fullWidth;
+        }
+
+        .btns {
+            @extend %fullWidth, %flexRow;
+            flex-wrap: wrap;
+
+            button {
+                @extend %blackButton;
+                width: 30%;
+                min-width: fit-content;
+                flex-grow: 1;
+                margin: 0 $small-margin;
+            }
+        }
+    }
+}

@@ -1,0 +1,224 @@
+{
+  "files.autoSave": "afterDelay",
+  "explorer.confirmDelete": false,
+  "security.workspace.trust.untrustedFiles": "open",
+  "workbench.iconTheme": "material-icon-theme",
+  "git.enableSmartCommit": true,
+  "http.proxyAuthorization": null,
+  "workbench.editor.navigationScope": "editor",
+  "editor.gotoLocation.multipleDefinitions": "goto",
+  "editor.gotoLocation.multipleTypeDefinitions": "goto",
+  "emmet.excludeLanguages": [],
+  "git.confirmSync": false,
+  "editor.gotoLocation.multipleReferences": "goto",
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "liveServer.settings.CustomBrowser": "chrome",
+  "liveServer.settings.donotVerifyTags": true,
+  "liveServer.settings.donotShowInfoMsg": true,
+  "liveServer.settings.port": 3000,
+  "git.ignoreWindowsGit27Warning": true,
+  "diffEditor.wordWrap": "on",
+  "editor.wordWrap": "on",
+  "javascript.updateImportsOnFileMove.enabled": "always",
+  "diffEditor.ignoreTrimWhitespace": false,
+  "[html]": {
+    "editor.defaultFormatter": "vscode.html-language-features"
+  },
+  "editor.fontSize": 16,
+  "[typescript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "[xml]": {
+    "editor.defaultFormatter": "j69.ejs-beautify"
+  },
+  "workbench.startupEditor": "readme",
+  "emmet.preferences": {
+    "output.inlineBreak": 1
+  },
+  "editor.quickSuggestions": {
+    "other": true,
+    "comments": true,
+    "strings": true
+  },
+  "editor.inlineSuggest.enabled": false,
+  "editor.suggest.preview": true,
+  "editor.linkedEditing": true,
+  "explorer.confirmPasteNative": false,
+  "editor.largeFileOptimizations": true,
+  "editor.stickyScroll.enabled": true,
+  "editor.hover.sticky": true,
+  "editor.hover.delay": 300,
+  "editor.hover.enabled": true,
+  "editor.parameterHints.enabled": true,
+  "css.hover.documentation": true,
+  "less.hover.documentation": true,
+  "scss.hover.documentation": true,
+  "html.hover.documentation": true,
+  "accessibility.verbosity.hover": true,
+  "less.hover.references": true,
+  "css.hover.references": true,
+  "scss.hover.references": true,
+  "html.hover.references": true,
+  "npm.scriptHover": false,
+  "accessibility.verbosity.inlineCompletions": false,
+  "npm.fetchOnlinePackageInfo": false,
+  "workbench.productIconTheme": "materialiconic-product-icons",
+  "[scss]": {
+    "editor.defaultFormatter": "vscode.css-language-features"
+  },
+  "workbench.colorTheme": "Tokyo Night",
+  "workbench.editorAssociations": {
+    "*.png": "gryc.viewer",
+    "*.gif": "imagePreview.previewEditor"
+  },
+  "vscode-angular-html.angularAnimationTriggerPrefix": "#B4F9F8",
+  "vscode-angular-html.angularBindingAttributeDelimiter": "#B4F9F8",
+  "vscode-angular-html.angularExpression": "#B4F9F8",
+  "vscode-angular-html.angularPrefixedAttributesRefPrefix": "#B4F9F8",
+  "vscode-angular-html.angularSyntaxSugarAttributesPrefix": "#B4F9F8",
+  "vscode-angular-html.angularTemplateVariablePrefix": "#B4F9F8",
+  "vscode-angular-html.colorCustomizations": true,
+  "vscode-angular-html.dtdDoctypeQuantifier": "#B4F9F8",
+  "vscode-angular-html.xmlAttributeNamespaceDivider": "#B4F9F8",
+  "vscode-angular-html.xmlTagNamespaceDivider": "#B4F9F8",
+  "vscode-angular-html.controlFlowPrefix": "#B4F9F8",
+  "editor.tokenColorCustomizations": {
+    "textMateRules": [
+      {
+        "scope": "html-template.ng.interpolation.begin",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "html-template.ng.interpolation.end",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "html-template.ng.attributes.animationtrigger.prefix",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "punctuation.definition.ng-binding-name.begin.html",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "punctuation.definition.ng-binding-name.end.html",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "html-template.ng.attributes.prefix.ref",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "html-template.ng.attributes.prefix.sugar",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "html-template.ng.attributes.template.prefix",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "html-template.ng.control-flow.prefix",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "html-template.ng.tag.colon",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "html-template.ng.attributes.colon",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      },
+      {
+        "scope": "html-template.ng.occurrence.dtd",
+        "settings": {
+          "foreground": "#B4F9F8"
+        }
+      }
+    ]
+  },
+  "mcpServers": {},
+  "codium.codeCompletion.enable": true,
+  "i18n-ally.localesPaths": [
+    "public/i18n"
+  ],
+  "i18n-ally.displayLanguage": "en",
+  "i18n-ally.enabledFrameworks": [
+    "ngx-translate"
+  ],
+  "i18n-ally.enabledParsers": [
+    "json"
+  ],
+  "i18n-ally.extract.autoDetect": true,
+  "i18n-ally.keystyle": "nested",
+  "i18n-ally.pathMatcher": "{locale}/**/*.json",
+  "i18n-ally.extract.keygenStyle": "camelCase",
+  "i18n-ally.editor.preferEditor": true,
+  "i18n-ally.dirStructure": "auto",
+  "i18n-ally.extract.targetPickingStrategy": "most-similar",
+  "typescript.suggest.enabled": true,
+  "typescript.validate.enable": true,
+  "typescript.suggest.includeCompletionsForImportStatements": false,
+  "cSpell.languageSettings": [],
+  "explorer.fileNesting.patterns": {
+    "*.ts": "${capture}.js",
+    "*.js": "${capture}.js.map, ${capture}.min.js, ${capture}.d.ts",
+    "*.jsx": "${capture}.js",
+    "*.tsx": "${capture}.ts",
+    "tsconfig.json": "tsconfig.*.json",
+    "package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb, bun.lock"
+  },
+  "svgPreview.autoOpen": false,
+  "editor.accessibilitySupport": "off",
+  "security.restrictUNCAccess": false,
+  "files.autoSaveWhenNoErrors": true,
+  "git.promptToSaveFilesBeforeStash": "staged",
+  "js/ts.implicitProjectConfig.strictFunctionTypes": false,
+  "movets.removeIndexSuffix": false,
+  "codesnap.showWindowTitle": true,
+  "explorer.confirmDragAndDrop": false,
+  "workbench.editor.splitOnDragAndDrop": false,
+  "editor.formatOnSaveMode": "modifications",
+  "js/ts.implicitProjectConfig.experimentalDecorators": true,
+  "typescript.updateImportsOnFileMove.enabled": "always",
+  "git-graph.commitDetailsView.fileView.fileTree.compactFolders": false,
+  "explorer.fileNesting.enabled": true,
+  "i18n-ally.ignoredLocales": [],
+  "commentTranslate.targetLanguage": "est",
+  "commentTranslate.maxTranslationLength": 1000000,
+  "commentTranslate.browse.enabled": false,
+  "commentTranslate.ignore": [],
+  "commentTranslate.hover.string": false,
+  "commentTranslate.hover.concise": false,
+  "commentTranslate.hover.variable": false,
+  "commentTranslate.multiLineMerge": false,
+  "commentTranslate.hover.content": true,
+  "commentTranslate.hover.enabled": true,
+  "i18n-ally.extract.keyMaxLength": 10000000000,
+  "i18n-ally.extract.keygenStrategy": "slug",
+  "i18n-ally.languageTagSystem": "bcp47",
+  "editor.minimap.enabled": true
+}

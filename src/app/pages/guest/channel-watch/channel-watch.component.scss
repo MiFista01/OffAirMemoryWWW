@@ -1,0 +1,25 @@
+.watch {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #0a0a0a;
+  color: #eee;
+}
+
+.watch__video {
+  width: min(96vw, 1100px);
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.watch__status,
+.watch__meta {
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+.watch__error {
+  color: #f66;
+}

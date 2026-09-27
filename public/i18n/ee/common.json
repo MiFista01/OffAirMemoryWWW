@@ -1,0 +1,15 @@
+{
+    "select": "Vali",
+    "comingSoon": "Peagi tulekul",
+    "username": "Kasutajanimi",
+    "email": "E-post",
+    "password": "Parool",
+    "author": "Autor",
+    "notFound": "Ei leitud",
+    "yes": "Jah",
+    "no": "Ei",
+    "none": "Puudub",
+    "createdAt": "Lisatud",
+    "today": "Täna",
+    "noDescription": "Kirjeldus puudub"
+}

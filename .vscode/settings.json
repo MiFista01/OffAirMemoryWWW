@@ -1,0 +1,15 @@
+{
+    "i18n-ally.localesPaths": [
+        "public/i18n"
+    ],
+    "i18n-ally.sourceLanguage": "en",
+    "i18n-ally.keystyle": "nested",
+    "liveServer.settings.port": 3001,
+    "cSpell.words": [
+        "primeng"
+    ],
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+    "IDE.md": "extensions.list, command.ps1, settings.json, export-settings.ps1, settings.json",
+  }
+}

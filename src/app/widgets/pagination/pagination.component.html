@@ -1,0 +1,19 @@
+<button class="prev" (click)="prevPage()" [disabled]="currentPage === 1">
+    <img src="./imgs/user/icons/pagination-arrow.webp" alt="">
+</button>
+<ul>
+    <li [ngClass]="{current: 1 === currentPage}">
+        <button (click)="goToPage(1)">1</button>
+        <span *ngIf="pages[0] > 2">...</span>
+    </li>
+    <li *ngFor="let item of pages; trackBy: trackByFn" [ngClass]="{current: item === currentPage}">
+        <button (click)="goToPage(item)">{{item}}</button>
+    </li>
+    <li *ngIf="totalPages > 1" [ngClass]="{current: totalPages === currentPage}">
+        <span *ngIf="pages[pages.length - 1] < totalPages - 1">...</span>
+        <button (click)="goToPage(totalPages)">{{totalPages}}</button>
+    </li>
+</ul>
+<button class="next" (click)="nextPage()" [disabled]="currentPage === totalPages">
+    <img src="./imgs/user/icons/pagination-arrow.webp" alt="">
+</button>

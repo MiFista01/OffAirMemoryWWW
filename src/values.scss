@@ -1,0 +1,75 @@
+// Sizes and spacing
+$size-index: calc(1vw + 1vh);
+$border-radius: 5px;
+$full-radius: 300px;
+
+$dark-primary: color-mix(in oklab, var(--primary) 100%, black 25%);
+$light-dark-primary: color-mix(in oklab, var(--primary) 100%, black 10%);
+$light-primary: color-mix(in oklab, var(--primary) 100%, white 25%);
+
+// Layout widths
+$containers-width: 60%;
+$left-side-width: 20%;
+$center-side-width: 55%;
+$right-side-width: 25%;
+
+// Breakpoints
+$layout-breakpoint-middle: 1300px;
+$layout-breakpoint-small: 850px;
+$layout-breakpoint-tiny: 700px;
+
+// Spacing
+$tiny-padding: 2px;
+$small-padding: 5px;
+$standard-padding: 10px;
+$big-padding: 15px;
+
+$small-margin: 3px;
+$standard-margin: 5px;
+$medium-margin: 10px;
+$big-margin: 15px;
+$large-margin: 20px;
+$menu-item-margin: 10px;
+
+$small-gap: 5px;
+$standard-gap: 10px;
+$medium-gap: 15px;
+$big-gap: 20px;
+
+// Forms
+$form-padding: 15px;
+$form-margin: 20px;
+$form-border: 1px #000 dotted;
+$strength-colors: (
+    1: #ff0000,
+    2: #ff6b6b,
+    3: #ff913d,
+    4: #ffd93d,
+    5: #9fff6b,
+    6: #00ff00
+);
+$section-width: 95%;
+
+// Palette
+$header-menu-bg-color: #281905;
+$up-menu-color: #ac8544;
+$down-menu-color: #fff;
+$input-border-color: #b46850;
+$main-bg-color: #be8d6c;
+$center-bg-color: #ebd7be;
+$footer-copyright: #dc1e4a;
+$main-text-color: black;
+$text-arrow-color: #9b503a;
+
+$input-bg-color: #be8d6c;
+$input-border: 1px solid #b46850;
+$input-outline-color: #9b503a;
+
+$header-top-color: #6c482e;
+$header-bottom-color: #8c5f3f;
+
+// Tables
+$table-color1: #d6bfa3;
+$table-color2: #ddc8b0;
+
+$pagination-arrow-width: 2vw;

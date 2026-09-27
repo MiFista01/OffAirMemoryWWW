@@ -1,0 +1,12 @@
+@use '@css-values' as *;
+:host {
+    display: block;
+}
+::ng-deep {
+    .p-fileupload-header{
+        padding: 0 $standard-padding !important;
+    }
+    .p-message{
+        display: none !important;
+    }
+}

@@ -1,0 +1,251 @@
+@use '@css-values' as *;
+@use 'sass:math';
+
+@mixin resetAutofill($bg: transparent, $color: currentColor) {
+    &:-webkit-autofill,
+    &:-webkit-autofill:hover,
+    &:-webkit-autofill:focus,
+    &:-webkit-autofill:active {
+        -webkit-text-fill-color: $color;
+        -webkit-box-shadow: 0 0 1000px 1000px $bg inset;
+        transition: background-color 999999999s ease-in-out 0s;
+    }
+}
+
+//defer
+@mixin defer($width: 0) {
+    position: relative;
+    margin: 0 auto;
+
+    @if $width ==0 {
+        width: 100%;
+    }
+
+    @else {
+        width: $width;
+    }
+}
+
+// Mixin for background images
+@mixin backgroundImage($url, $size: 100% 200%, $position: 0 0) {
+    background-image: url($url);
+    background-position: $position;
+    background-size: $size;
+    background-repeat: no-repeat;
+}
+
+// Typography
+@mixin fontSizes($multipliers...) {
+    $classes: (
+        'giant',
+        'large',
+        'big',
+        'medium',
+        'small',
+        'tiny'
+    );
+
+@each $pair in zip($multipliers, $classes) {
+    $multiplier: nth($pair, 1);
+    $class: nth($pair, 2);
+
+    .font-#{$class} {
+        font-size: calc(#{$size-index} * #{$multiplier}) !important;
+        transition-property: none;
+    }
+}
+}
+
+// Media queries
+@mixin respondTo($breakpoint) {
+    @if $breakpoint =="mobile" {
+        @media (max-width: 768px) {
+            @content;
+        }
+    }
+
+    @else if $breakpoint =="tablet" {
+        @media (max-width: 1024px) {
+            @content;
+        }
+    }
+
+    @else if $breakpoint =="desktop" {
+        @media (min-width: 1025px) {
+            @content;
+        }
+    }
+}
+
+// Effects
+@mixin boxShadow($level: 1) {
+    @if $level ==1 {
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); // Light shadow
+    }
+
+    @else if $level ==2 {
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); // Medium shadow
+    }
+
+    @else if $level ==3 {
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1); // Strong shadow
+    }
+}
+
+// Utilities
+@mixin clearfix {
+    &::after {
+        content: "";
+        display: table;
+        clear: both;
+    }
+}
+
+// Responsive font sizes
+@include fontSizes(1.3, 0.8, 0.65, 0.6, 0.5, 0.45);
+
+// Media queries for responsive fonts
+@media (max-width: $layout-breakpoint-middle) {
+    @include fontSizes(1.5, 0.95, 0.85, 0.8, 0.7, 0.65);
+}
+
+@media (max-width: $layout-breakpoint-small) {
+    @include fontSizes(1.7, 1.15, 1.05, 1.0, 0.9, 0.85);
+}
+
+@media (max-width: $layout-breakpoint-tiny) {
+    @include fontSizes(1.9, 1.35, 1.25, 1.2, 1.1, 1.05);
+}
+
+// Mixin for header list
+@mixin headerList($url, $color: "white") {
+    li {
+        @extend %uppercase;
+        margin: 0 $menu-item-margin;
+
+        &::before {
+            content: url($url);
+        }
+
+        a {
+            color: $color;
+            margin-left: 3px;
+        }
+    }
+}
+
+// Mixin for buttons
+@mixin button($bg-color, $border-color) {
+    background-color: $bg-color;
+    border: 1px solid $border-color;
+    width: 100%;
+    display: block;
+    text-align: center;
+}
+
+// Mixin for inputs
+@mixin input {
+    width: 100%;
+    border: 1px solid $inputBorderColor;
+    background-color: $mainBgColor;
+    padding: 0;
+    font-size: $font-size-small;
+    box-sizing: border-box;
+}
+
+
+// Mixin for icons
+@mixin icon($icon-size: 16px, $x: 0, $y: 0, $icon-path: '', $count-sprite: 1) {
+    position: relative;
+
+    &::before {
+        content: '';
+        display: block;
+        width: $icon-size;
+        height: $icon-size;
+        flex-shrink: 0;
+        background-image: url($icon-path);
+        background-position: calc(#{-$x * $icon-size}) calc(calc(#{-$y * $icon-size}));
+        background-size: calc(100% * $count-sprite);
+        background-repeat: no-repeat;
+    }
+}
+
+@mixin generateIcons($icons-list, $icon-size: 16px, $sprite-path: '') {
+    @each $icon in $icons-list {
+        $id: map-get($icon, "id");
+        $x: map-get($icon, "x");
+        $y: map-get($icon, "y");
+
+        .#{$id} {
+            @include icon($icon-size, $x, $y, $sprite-path, 3);
+        }
+    }
+}
+
+@mixin flipCardBase ($width: 100%, $height: auto) {
+    perspective: 1000px;
+    position: relative;
+    width: $width;
+    height: $height;
+    color: inherit;
+    display: block;
+    text-decoration: none;
+
+    &:hover {
+        transform: translateY(-2px);
+        transition: transform 0.2s ease;
+    }
+}
+
+@mixin flipCardSide($padding: $standard-padding) {
+    @extend %flexColumn;
+    align-items: center;
+    justify-content: center;
+    grid-area: card;
+    width: 100%;
+    min-height: 100%;
+    box-sizing: border-box;
+    border-radius: $border-radius;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    backface-visibility: hidden;
+    padding: $padding;
+}
+
+@mixin flipCardFront($padding: $standard-padding) {
+    @include flipCardSide($padding);
+    z-index: 2;
+}
+
+@mixin flipCardBack($padding: $standard-padding) {
+    @include flipCardSide($padding);
+    transform: rotateY(180deg);
+    background-color: rgba($color: #000000, $alpha: 0.05);
+}
+
+//form-base
+@mixin formBase($width: 0) {
+    @if $width ==0 {
+        flex-grow: 1;
+    }
+
+    @else {
+        width: $width;
+    }
+
+    box-sizing: border-box;
+    margin: 0 auto;
+    border-radius: $border-radius;
+
+    legend {
+        text-transform: uppercase;
+    }
+}
+
+@mixin recipeNode($depth: 0) {
+    @if math.is-unitless($depth) and ($depth % 2 == 0) {
+        background-color: rgba(255, 255, 255, 0.05);
+      } @else {
+        background-color: rgba(0, 0, 0, 0.05);
+      }
+}

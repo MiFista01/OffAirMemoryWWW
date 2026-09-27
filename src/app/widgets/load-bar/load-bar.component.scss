@@ -1,0 +1,57 @@
+@use '@css-values' as *;
+@use '@css-placeholders' as *;
+
+:host {
+    display: contents;
+}
+
+.loadbar {
+    position: relative;
+    overflow: hidden;
+    border-radius: $border-radius;
+    width: 100%;
+    border: 1px solid black;
+
+
+    &::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(to right,
+                var(--start-color) 0%,
+                var(--middle-color) 50%,
+                var(--end-color) 100%);
+        filter: brightness(0.6);
+        pointer-events: none;
+    }
+
+    .progress {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: var(--progress-width);
+        transition: width 0.3s ease-in-out;
+        background: linear-gradient(to right,
+                var(--start-color) 0%,
+                var(--middle-color) 50%,
+                var(--end-color) 100%);
+
+
+    }
+    p{
+        @extend %reset;
+        position: absolute;
+        width: 100%;
+        text-align: center;
+        left: 0%;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--main-bg);
+        font-size: var(--progress-text-size);
+        font-weight: bold;
+    }
+}

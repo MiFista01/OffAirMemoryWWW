@@ -1,0 +1,15 @@
+<ng-container *ngIf="items.length > 0">
+  <swiper-container
+    [initialSlide]="setSlide"
+    #swiperContainer
+    init="false"
+    (swiperslidechange)="setSlideChange($event)">
+    <ng-content select="common-slides"></ng-content>
+    <swiper-slide *ngFor="let item of items; let i = index; trackBy: trackBy">
+      <ng-container *ngIf="slideTemplate">
+        <ng-container *ngTemplateOutlet="slideTemplate; context: { $implicit: item, index: i }">
+        </ng-container>
+      </ng-container>
+    </swiper-slide>
+  </swiper-container>
+</ng-container>

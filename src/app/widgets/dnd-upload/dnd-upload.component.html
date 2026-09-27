@@ -1,0 +1,21 @@
+<p-fileupload
+  #fileUpload
+  [name]="name"
+  [url]="url"
+  (onUpload)="onUpload($event)"
+  (onSelect)="onSelect($event)"
+  (onError)="onError($event)"
+  (onBeforeUpload)="onBeforeUpload($event)"
+  (onRemoveUploadedFile)="onRemoveUploadedFile($event)"
+  [multiple]="true"
+  [accept]="accept"
+  [maxFileSize]="maxFileSize"
+  [withCredentials]="true"
+  [auto]="autoUpload"
+  mode="advanced"
+  [fileLimit]="fileLimit"
+  [files]="toUploadFiles"
+  [chooseLabel]="'btns.choose' | translate"
+  [uploadLabel]="'btns.upload' | translate"
+  [cancelLabel]="'btns.cancel' | translate">
+</p-fileupload>

@@ -1,0 +1,11 @@
+{
+    "settings": {
+        "title": "Seaded",
+        "appearance": "Välimus"
+    },
+    "appearance": {
+        "theme": "Teema",
+        "layout": "Paigutus",
+        "reverseLayout": "Pöördpaigutus"
+    }
+}

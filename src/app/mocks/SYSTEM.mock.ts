@@ -1,0 +1,1 @@
+export const mockJWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsImV4cCI6NDA3OTA4ODAwMCwiaWF0IjoxNzA0MDY3MjAwfQ.invalid";

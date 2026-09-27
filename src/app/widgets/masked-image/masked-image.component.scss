@@ -1,0 +1,27 @@
+@use '@css-placeholders' as *;
+
+:host {
+  @extend %fullWidth;
+  display: block;
+}
+
+.masked-image {
+  @extend %fullWidth;
+  display: block;
+
+  canvas {
+    @extend %fullWidth;
+    display: block;
+    height: auto;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  &.is-loading canvas {
+    opacity: 0.6;
+  }
+
+  &.has-error canvas {
+    opacity: 0.35;
+  }
+}

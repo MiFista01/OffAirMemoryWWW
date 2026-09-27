@@ -1,0 +1,12 @@
+{
+    "authForm": {
+        "username": "Username",
+        "password": "Password",
+        "login": "Log In",
+        "reg": "Register",
+        "passForget": "Forgot password?"
+    },
+    "error": {
+        "401": "Invalid username or password"
+    }
+}

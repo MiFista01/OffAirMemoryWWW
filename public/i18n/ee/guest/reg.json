@@ -1,0 +1,29 @@
+{
+  "form": {
+    "passwordAgain": "Parool uuesti",
+    "emailAgain": "E-post uuesti",
+    "passwordStrength": {
+      "0": "Parool peab olema vähemalt keskmise tugevusega",
+      "1": "Väga nõrk",
+      "2": "Nõrk",
+      "3": "Keskmine",
+      "4": "Hea",
+      "5": "Tugev",
+      "6": "Väga tugev"
+    },
+    "rules": {
+      "text": "Registreerudes kinnitad, et oled lugenud ",
+      "link": "kasutustingimusi",
+      "and": " ning nõustud nendega!"
+    },
+    "submit": "Registreeru",
+    "passwordAgainPlaceholder": "Paroolid peavad kattuma"
+  },
+  "regFormKey": {
+    "201": "Registreerimine õnnestus.",
+    "422": "Viga valideerimisel. Kontrolli välju ja proovi uuesti.",
+    "409": "Kasutaja on juba olemas.",
+    "400": "Vigane päring. Proovi hiljem või võta ühendust toega.",
+    "500": "Serveri viga. Proovi hiljem või võta ühendust toega."
+  }
+}

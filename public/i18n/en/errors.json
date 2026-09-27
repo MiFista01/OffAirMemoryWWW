@@ -1,0 +1,10 @@
+{
+    "errors": {
+        "invalidImageType": "Invalid image format",
+        "404": "API not found. Please contact support.",
+        "403": "Forbidden request.",
+        "409": "Conflict request.",
+        "401": "Unauthorized.",
+        "500": "Internal server error."
+    }
+}
