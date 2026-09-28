@@ -130,8 +130,9 @@ export class GuestComponent implements OnInit, OnDestroy {
     this.scheduleHideUi();
   }
 
-  @HostListener('document:mousemove')
-  onMouseMove(): void {
+  @HostListener('document:pointermove')
+  @HostListener('document:pointerdown')
+  onPointerActivity(): void {
     this.showUi();
   }
 
