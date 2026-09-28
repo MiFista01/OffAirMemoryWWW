@@ -1,12 +1,28 @@
-<div class="watch">
-  @if (loading) {
-    <p class="watch__status">Starting stream…</p>
+<div
+  class="watch"
+  [class.watch--waiting]="crt === 'waiting'"
+  [class.watch--powering-on]="crt === 'powering-on'"
+  [class.watch--on]="crt === 'on'"
+  [class.watch--powering-off]="crt === 'powering-off'"
+  [class.watch--off-air]="crt === 'off-air'"
+  [class.watch--needs-gesture]="needsGesture"
+>
+  <video
+    #video
+    class="watch__video"
+    playsinline
+    (click)="onVideoClick()"
+  ></video>
+
+  <div class="watch__crt" aria-hidden="true"></div>
+
+  @if (crt === 'off-air') {
+    <div class="watch__off-air">OFF AIR</div>
   }
-  @if (error) {
-    <p class="watch__error">{{ error }}</p>
-  }
-  <video #video class="watch__video" controls playsinline></video>
-  @if (meta.episodeId) {
-    <p class="watch__meta">ep {{ meta.episodeId }} · +{{ meta.offsetSec }}s</p>
+
+  @if (needsGesture && crt === 'on') {
+    <button type="button" class="watch__unmute" (click)="onVideoClick()">
+      TAP FOR SOUND
+    </button>
   }
 </div>
