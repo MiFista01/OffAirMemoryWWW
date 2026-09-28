@@ -40,11 +40,14 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   private streamUrl = '';
   private stallTimer?: ReturnType<typeof setTimeout>;
   private crtTimer?: ReturnType<typeof setTimeout>;
+  private heartbeatTimer?: ReturnType<typeof setInterval>;
   private bootGen = 0;
   private rebooting = false;
   private rebootCount = 0;
   private rebootWindowStarted = 0;
   private attachAt = 0;
+  private frag404Streak = 0;
+  private lastFrag404Url = '';
   private onWaiting = () => this.onBufferIssue();
   private onStalled = () => this.onBufferIssue();
   private onEnded = () => this.goOffAir();
@@ -76,6 +79,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       if (slug === this.slug && this.hls) return;
       clearTimeout(this.crtTimer);
       clearTimeout(this.stallTimer);
+      this.stopHeartbeat();
       this.slug = slug;
       this.crt = 'waiting';
       void this.bootStream();
@@ -111,6 +115,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
     clearTimeout(this.stallTimer);
     clearTimeout(this.crtTimer);
+    this.stopHeartbeat();
     this.bootGen += 1;
     this.loading = false;
     this.rebooting = false;
@@ -272,7 +277,29 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
   private onHlsReady(): void {
     this.beginPowerOn();
+    this.startHeartbeat();
     void this.startPlayback();
+  }
+
+  /** Nest kills idle encodes (~60s). Touch while the CRT is on. */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    const slug = this.slug;
+    if (!slug) return;
+    const tick = () => {
+      if (!this.slug || this.slug !== slug) return;
+      if (this.crt === 'off-air' || this.crt === 'powering-off') return;
+      void firstValueFrom(this.stream.heartbeat(slug)).catch(() => undefined);
+    };
+    tick();
+    this.heartbeatTimer = setInterval(tick, 20_000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
   }
 
   private resumeIfPaused(): void {
@@ -298,17 +325,50 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     );
   }
 
+  private nudgeToLiveEdge(): void {
+    const hls = this.hls;
+    const v = this.videoRef?.nativeElement;
+    if (!hls || !v) return;
+    const live = hls.liveSyncPosition;
+    if (live != null && Number.isFinite(live)) {
+      try {
+        v.currentTime = live;
+      } catch {
+        /* ignore */
+      }
+    }
+    this.resumeIfPaused();
+  }
+
+  /** Playlist still points at a deleted .ts — reload manifest and snap to live. */
+  private recoverStaleHls(playlistUrl: string): void {
+    const hls = this.hls;
+    if (!hls) return;
+    console.warn('[tv] stale HLS fragment — remanifest + live edge');
+    try {
+      hls.stopLoad();
+      // cache-bust in case a proxy kept an outdated m3u8
+      const sep = playlistUrl.includes('?') ? '&' : '?';
+      hls.loadSource(`${playlistUrl}${sep}_=${Date.now()}`);
+      hls.startLoad(-1);
+      this.nudgeToLiveEdge();
+    } catch {
+      if (!this.rebooting) this.rebootStream();
+    }
+  }
+
   private onBufferIssue(): void {
     if (this.rebooting || this.loading) return;
     if (this.crt === 'off-air' || this.crt === 'powering-off') return;
     // First seconds after attach segments are still being written — do not reboot.
-    if (Date.now() - this.attachAt < 15_000) {
-      this.resumeIfPaused();
+    if (Date.now() - this.attachAt < 20_000) {
+      this.nudgeToLiveEdge();
       return;
     }
-    this.resumeIfPaused();
+    this.nudgeToLiveEdge();
     clearTimeout(this.stallTimer);
-    this.stallTimer = setTimeout(() => this.recoverOrReboot(), 4000);
+    // NAS encode can stall briefly — wait longer before /start reboot
+    this.stallTimer = setTimeout(() => this.recoverOrReboot(), 8000);
   }
 
   private recoverOrReboot(): void {
@@ -318,15 +378,15 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
     if (this.hls) {
       try {
+        this.nudgeToLiveEdge();
         this.hls.startLoad();
-        this.resumeIfPaused();
       } catch {
         /* fall through */
       }
     }
 
     clearTimeout(this.stallTimer);
-    this.stallTimer = setTimeout(() => this.rebootStream(), 6000);
+    this.stallTimer = setTimeout(() => this.rebootStream(), 10_000);
   }
 
   private rebootStream(): void {
@@ -373,19 +433,23 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       this.hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 8,
+        // Further behind live edge — late joiners / NAS delete_segments → fewer 404 loops
+        liveSyncDurationCount: 7,
+        liveMaxLatencyDurationCount: 22,
         maxLiveSyncPlaybackRate: 1.0,
         manifestLoadingMaxRetry: 12,
         manifestLoadingRetryDelay: 1000,
-        fragLoadingMaxRetry: 10,
-        fragLoadingRetryDelay: 1000,
+        // Don't hammer the same missing .ts (hls.js default can loop for ages)
+        fragLoadingMaxRetry: 2,
+        fragLoadingRetryDelay: 500,
       });
       this.hls.attachMedia(video);
       this.hls.on(Hls.Events.MEDIA_ATTACHED, () => {
         this.hls?.loadSource(url);
       });
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        this.frag404Streak = 0;
+        this.lastFrag404Url = '';
         if (keepSound) {
           video.muted = false;
           this.beginPowerOn();
@@ -404,12 +468,33 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
           data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
           data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT
         ) {
-          // While segments are still being written — soft retry, no off air.
-          if (warmingUp) {
-            setTimeout(() => this.hls?.startLoad(), 1000);
+          const code = (data.response as { code?: number } | undefined)?.code;
+          const fragUrl =
+            data.frag?.url ||
+            (data.response as { url?: string } | undefined)?.url ||
+            '';
+
+          if (code === 404 || warmingUp) {
+            // Same missing .ts over and over → soft remanifest + live edge (breaks the loop)
+            if (fragUrl && fragUrl === this.lastFrag404Url) {
+              this.frag404Streak += 1;
+            } else {
+              this.lastFrag404Url = fragUrl;
+              this.frag404Streak = 1;
+            }
+
+            if (this.frag404Streak >= 2) {
+              this.frag404Streak = 0;
+              this.lastFrag404Url = '';
+              this.recoverStaleHls(url);
+              return;
+            }
+
+            this.nudgeToLiveEdge();
+            setTimeout(() => this.hls?.startLoad(-1), warmingUp ? 1000 : 300);
             return;
           }
-          this.hls?.startLoad();
+          this.hls?.startLoad(-1);
           return;
         }
 
@@ -461,6 +546,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.bootGen += 1;
     clearTimeout(this.stallTimer);
     clearTimeout(this.crtTimer);
+    this.stopHeartbeat();
     const video = this.videoRef?.nativeElement;
     video?.removeEventListener('waiting', this.onWaiting);
     video?.removeEventListener('stalled', this.onStalled);
