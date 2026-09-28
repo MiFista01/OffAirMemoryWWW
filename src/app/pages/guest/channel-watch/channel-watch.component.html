@@ -16,6 +16,10 @@
 
   <div class="watch__crt" aria-hidden="true"></div>
 
+  @if (crt === 'waiting' && loading) {
+    <div class="watch__off-air watch__wait">{{ waitMessage }}</div>
+  }
+
   @if (crt === 'off-air') {
     <div class="watch__off-air">OFF AIR</div>
   }

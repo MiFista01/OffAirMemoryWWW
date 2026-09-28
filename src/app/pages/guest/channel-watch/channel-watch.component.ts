@@ -8,9 +8,13 @@ import {
 } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { environment } from '@env';
-import { StreamCoreService } from '@services';
+import {
+  StreamCoreService,
+  StreamStartResponse,
+  StreamStatusResponse,
+} from '@services';
 import Hls from 'hls.js';
-import { Subscription, from, switchMap } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
 
 type CrtState = 'waiting' | 'powering-on' | 'on' | 'powering-off' | 'off-air';
 
@@ -30,21 +34,23 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   @ViewChild('video', { static: true })
   videoRef!: ElementRef<HTMLVideoElement>;
 
-  private sub?: Subscription;
-  private routeSub?: Subscription;
+  private routeSub?: ReturnType<ActivatedRoute['paramMap']['subscribe']>;
   private hls?: Hls;
   private slug = '';
   private streamUrl = '';
   private stallTimer?: ReturnType<typeof setTimeout>;
   private crtTimer?: ReturnType<typeof setTimeout>;
+  private bootGen = 0;
   private rebooting = false;
   private rebootCount = 0;
   private rebootWindowStarted = 0;
+  private attachAt = 0;
   private onWaiting = () => this.onBufferIssue();
   private onStalled = () => this.onBufferIssue();
   private onEnded = () => this.goOffAir();
   private onPlaying = () => {
     clearTimeout(this.stallTimer);
+    this.loading = false;
   };
 
   crt: CrtState = 'waiting';
@@ -52,6 +58,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   needsGesture = false;
   error: string | null = null;
   loading = true;
+  waitMessage = 'Подключаем эфир…';
   meta: { episodeId?: number; offsetSec?: number } = {};
 
   constructor(
@@ -71,7 +78,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       clearTimeout(this.stallTimer);
       this.slug = slug;
       this.crt = 'waiting';
-      this.bootStream();
+      void this.bootStream();
     });
   }
 
@@ -104,7 +111,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
     clearTimeout(this.stallTimer);
     clearTimeout(this.crtTimer);
-    this.sub?.unsubscribe();
+    this.bootGen += 1;
     this.loading = false;
     this.rebooting = false;
     this.needsGesture = false;
@@ -129,10 +136,11 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     }, CRT_POWER_OFF_MS);
   }
 
-  private bootStream(): void {
-    this.sub?.unsubscribe();
+  private async bootStream(): Promise<void> {
+    const gen = ++this.bootGen;
     this.loading = true;
     this.error = null;
+    this.waitMessage = 'Подключаем эфир…';
     this.hls?.destroy();
     this.hls = undefined;
     clearTimeout(this.stallTimer);
@@ -141,28 +149,66 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       this.crt = 'waiting';
     }
 
-    this.sub = this.stream
-      .start(this.slug)
-      .pipe(
-        switchMap((res) => {
-          this.meta = { episodeId: res.episodeId, offsetSec: res.offsetSec };
-          const url = this.toPlayableUrl(res.streamUrl);
-          this.streamUrl = url;
-          return from(this.waitUntilOk(url).then(() => url));
-        }),
-      )
-      .subscribe({
-        next: (url) => {
-          this.attach(url);
-          this.loading = false;
-          this.rebooting = false;
-        },
-        error: (err) => {
-          this.loading = false;
-          this.rebooting = false;
-          this.goOffAir(err?.error?.message || err?.message || 'Stream failed');
-        },
-      });
+    try {
+      const url = await this.waitUntilPlayable(this.slug, gen);
+      if (gen !== this.bootGen) return;
+      this.attach(url);
+      this.rebooting = false;
+    } catch (err: unknown) {
+      if (gen !== this.bootGen) return;
+      this.loading = false;
+      this.rebooting = false;
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message?: string }).message)
+          : 'Stream failed';
+      this.goOffAir(msg || 'Stream failed');
+    }
+  }
+
+  /**
+   * /start → if not playable yet, poll /status?ensure=true (~2s).
+   * Do not attach the player until streamUrl exists — otherwise a 404 storm on an empty folder.
+   */
+  private async waitUntilPlayable(slug: string, gen: number): Promise<string> {
+    let res: StreamStartResponse | StreamStatusResponse =
+      await firstValueFrom(this.stream.start(slug));
+    if (gen !== this.bootGen) throw new Error('cancelled');
+
+    this.meta = {
+      episodeId: 'episodeId' in res ? res.episodeId : undefined,
+      offsetSec: 'offsetSec' in res ? res.offsetSec : undefined,
+    };
+
+    for (let i = 0; i < 90; i++) {
+      if (gen !== this.bootGen) throw new Error('cancelled');
+
+      if (res.status === 'off') {
+        throw new Error(res.message || 'Сейчас не в эфире');
+      }
+
+      const playable = !!(res.playable ?? res.ready) && !!res.streamUrl;
+      if (playable && res.streamUrl) {
+        const url = this.toPlayableUrl(res.streamUrl);
+        this.streamUrl = url;
+        this.waitMessage = 'Почти готово…';
+        await this.waitUntilOk(url, gen);
+        if (gen !== this.bootGen) throw new Error('cancelled');
+        return url;
+      }
+
+      this.waitMessage =
+        res.message || 'Эфир есть, подготавливаем поток — подождите';
+      const delayMs = Math.max(1000, res.pollAfterMs ?? 2000);
+      await this.delay(delayMs);
+      if (gen !== this.bootGen) throw new Error('cancelled');
+
+      res = await firstValueFrom(
+        this.stream.status(slug, { ensure: true }),
+      );
+    }
+
+    throw new Error('Playlist not ready');
   }
 
   private toPlayableUrl(streamUrl: string): string {
@@ -176,9 +222,11 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  private async waitUntilOk(url: string, tries = 40): Promise<void> {
+  /** Wait for a real m3u8. 404/503 during seek is normal, not "off air". */
+  private async waitUntilOk(url: string, gen: number, tries = 60): Promise<void> {
     let last = 0;
     for (let i = 0; i < tries; i++) {
+      if (gen !== this.bootGen) return;
       try {
         const res = await fetch(url, {
           method: 'GET',
@@ -187,15 +235,17 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
         });
         last = res.status;
         if (res.ok) return;
-        if (res.status === 404 || res.status === 410) {
-          throw new Error('Broadcast ended');
-        }
-      } catch (e) {
-        if (e instanceof Error && e.message === 'Broadcast ended') throw e;
+        // 404/503 while ffmpeg is seeking — just wait
+      } catch {
+        /* network blip */
       }
-      await new Promise((r) => setTimeout(r, 500));
+      await this.delay(500);
     }
     throw new Error(`Playlist not ready (last HTTP ${last})`);
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms));
   }
 
   private async startPlayback(): Promise<void> {
@@ -251,6 +301,11 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   private onBufferIssue(): void {
     if (this.rebooting || this.loading) return;
     if (this.crt === 'off-air' || this.crt === 'powering-off') return;
+    // First seconds after attach segments are still being written — do not reboot.
+    if (Date.now() - this.attachAt < 15_000) {
+      this.resumeIfPaused();
+      return;
+    }
     this.resumeIfPaused();
     clearTimeout(this.stallTimer);
     this.stallTimer = setTimeout(() => this.recoverOrReboot(), 4000);
@@ -293,7 +348,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
     this.rebooting = true;
     console.warn('[tv] stall — /start + reattach HLS');
-    this.bootStream();
+    void this.bootStream();
   }
 
   private attach(url: string): void {
@@ -302,6 +357,8 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.hls?.destroy();
     this.soundOn = keepSound;
     video.muted = !keepSound;
+    this.attachAt = Date.now();
+    // keep loading true until first playing — otherwise stall/frag-404 → false reboot
 
     video.removeEventListener('waiting', this.onWaiting);
     video.removeEventListener('stalled', this.onStalled);
@@ -319,10 +376,10 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
         liveSyncDurationCount: 3,
         liveMaxLatencyDurationCount: 8,
         maxLiveSyncPlaybackRate: 1.0,
-        manifestLoadingMaxRetry: 8,
-        manifestLoadingRetryDelay: 500,
-        fragLoadingMaxRetry: 6,
-        fragLoadingRetryDelay: 500,
+        manifestLoadingMaxRetry: 12,
+        manifestLoadingRetryDelay: 1000,
+        fragLoadingMaxRetry: 10,
+        fragLoadingRetryDelay: 1000,
       });
       this.hls.attachMedia(video);
       this.hls.on(Hls.Events.MEDIA_ATTACHED, () => {
@@ -338,13 +395,20 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
         }
       });
       this.hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (this.rebooting || this.loading) return;
+        if (this.rebooting) return;
         if (this.crt === 'off-air' || this.crt === 'powering-off') return;
+
+        const warmingUp = Date.now() - this.attachAt < 20_000 || this.loading;
 
         if (
           data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
           data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT
         ) {
+          // While segments are still being written — soft retry, no off air.
+          if (warmingUp) {
+            setTimeout(() => this.hls?.startLoad(), 1000);
+            return;
+          }
           this.hls?.startLoad();
           return;
         }
@@ -354,6 +418,10 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
           data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR
         ) {
           const code = (data.response as { code?: number } | undefined)?.code;
+          if (warmingUp && (code === 404 || code === 503)) {
+            setTimeout(() => this.hls?.startLoad(), 1000);
+            return;
+          }
           if (code === 404 || code === 410) {
             this.goOffAir('Broadcast ended');
             return;
@@ -368,10 +436,10 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
           }
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
             this.hls.startLoad();
-            this.onBufferIssue();
+            if (!warmingUp) this.onBufferIssue();
             return;
           }
-          this.rebootStream();
+          if (!warmingUp) this.rebootStream();
         }
       });
       return;
@@ -390,6 +458,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.bootGen += 1;
     clearTimeout(this.stallTimer);
     clearTimeout(this.crtTimer);
     const video = this.videoRef?.nativeElement;
@@ -397,7 +466,6 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     video?.removeEventListener('stalled', this.onStalled);
     video?.removeEventListener('ended', this.onEnded);
     video?.removeEventListener('playing', this.onPlaying);
-    this.sub?.unsubscribe();
     this.routeSub?.unsubscribe();
     this.hls?.destroy();
   }
