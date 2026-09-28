@@ -68,4 +68,14 @@ export class StreamCoreService {
       `${environment.apiUrl}/stream/${encodeURIComponent(slug)}/status?${this.qs(opts)}`,
     );
   }
+
+  /** Keep ffmpeg idle TTL alive while the viewer watches (nginx no longer touches on /stream). */
+  heartbeat(
+    slug: string,
+    opts?: { tz?: string; profile?: string },
+  ): Observable<{ ok: boolean }> {
+    return this.req.Get<{ ok: boolean }>(
+      `${environment.apiUrl}/stream/${encodeURIComponent(slug)}/heartbeat?${this.qs(opts)}`,
+    );
+  }
 }
