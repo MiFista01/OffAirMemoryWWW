@@ -1,1 +1,62 @@
-<router-outlet></router-outlet>
+<div class="stage" [class.stage--zoomed]="zoomed">
+  <div class="area">
+    <img class="area__bg" src="/imgs/bg.webp" alt="">
+    <div class="tv">
+      <router-outlet></router-outlet>
+      <img class="tv__frame" src="/imgs/tv.webp" alt="">
+    </div>
+
+    @if (!zoomed) {
+      <button
+        type="button"
+        class="hint-arrow"
+        [class.hint-arrow--visible]="arrowVisible"
+        (click)="onArrowClick()"
+        aria-label="Zoom to TV"
+      >
+        <img src="/imgs/arrow.webp" alt="">
+      </button>
+    }
+  </div>
+</div>
+
+@if (zoomed) {
+  <button
+    type="button"
+    class="hint-arrow hint-arrow--out"
+    [class.hint-arrow--visible]="arrowVisible"
+    (click)="onArrowClick()"
+    aria-label="Zoom out"
+  >
+    <img src="/imgs/arrow.webp" alt="">
+  </button>
+}
+
+<div
+  class="remote"
+  [class.remote--visible]="arrowVisible"
+  aria-label="TV remote"
+  (pointerenter)="onRemoteEnter()"
+  (pointerleave)="onRemoteLeave()"
+>
+  <img class="remote__body" src="/imgs/remote/remote.webp" alt="">
+  @for (ch of channels; track ch.id) {
+    <button
+      type="button"
+      class="remote__btn"
+      [style.--x]="ch.x"
+      [style.--y]="ch.y"
+      [style.--w]="ch.w"
+      [style.--h]="ch.h"
+      [attr.aria-label]="ch.label"
+      [attr.aria-pressed]="activeSlug === ch.slug"
+      (pointerdown)="onChannelPointerDown(ch, $event)"
+      (pointerup)="onChannelPointerUp()"
+      (pointerleave)="onChannelPointerUp()"
+      (pointercancel)="onChannelPointerUp()"
+      (click)="onChannelClick(ch)"
+    >
+      <img [src]="channelSrc(ch)" alt="">
+    </button>
+  }
+</div>

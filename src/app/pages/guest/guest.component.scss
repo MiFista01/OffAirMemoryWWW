@@ -1,0 +1,194 @@
+:host {
+    display: block;
+    width: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    position: relative;
+}
+
+.stage {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+}
+
+.area {
+    // object-fit: cover equivalent for 384×216 art — % coords match the image
+    --art-w: 384;
+    --art-h: 216;
+    --screen-x: 109;
+    --screen-y: 85;
+    --screen-w: 101;
+    --screen-h: 61;
+    --ox: calc((var(--screen-x) + var(--screen-w) / 2) / var(--art-w) * 100%);
+    --oy: calc((var(--screen-y) + var(--screen-h) / 2) / var(--art-h) * 100%);
+    --zoom: 2.95;
+
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: max(100vw, calc(100dvh * var(--art-w) / var(--art-h)));
+    height: max(100dvh, calc(100vw * var(--art-h) / var(--art-w)));
+    transform-origin: 0 0;
+    transform: translate(
+        calc((100vw - 100%) / 2),
+        calc((100dvh - 100%) / 2)
+    );
+    transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+
+    &__bg {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: fill;
+        display: block;
+        image-rendering: pixelated;
+    }
+
+    .tv {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+
+        &__frame {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            display: block;
+            image-rendering: pixelated;
+            pointer-events: none;
+        }
+    }
+}
+
+.stage--zoomed .area {
+    // center CRT screen in the viewport, then scale
+    transform:
+        translate(50vw, 50dvh)
+        scale(var(--zoom))
+        translate(calc(var(--ox) * -1), calc(var(--oy) * -1));
+}
+
+// Under TV (inside .area) / bottom-center when zoomed-out control (on :host)
+.hint-arrow {
+    position: absolute;
+    left: calc((109 + 101 / 2) / 384 * 100%);
+    top: calc((85 + 61 + 4) / 216 * 100%);
+    z-index: 5;
+    width: calc(22 / 384 * 100%);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    transform: translate(-50%, 0);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.45s ease;
+
+    img {
+        display: block;
+        width: 100%;
+        height: auto;
+        image-rendering: pixelated;
+        pointer-events: none;
+        animation: arrow-bob 1.4s ease-in-out infinite;
+        animation-play-state: paused;
+    }
+
+    &--visible {
+        opacity: 1;
+        pointer-events: auto;
+
+        img {
+            animation-play-state: running;
+        }
+    }
+
+    &--out {
+        left: 50%;
+        top: auto;
+        bottom: 4%;
+        width: 3.75rem;
+
+        img {
+            transform: rotate(180deg);
+        }
+    }
+}
+
+@keyframes arrow-bob {
+    0%,
+    100% {
+        translate: 0 0;
+    }
+    50% {
+        translate: 0 18%;
+    }
+}
+
+.remote {
+    --art-w: 72;
+    --art-h: 176;
+
+    position: absolute;
+    right: max(0.75rem, 2vw);
+    bottom: max(0.75rem, 2vw);
+    z-index: 20;
+    width: clamp(5.5rem, 12vw, 9.5rem);
+    aspect-ratio: var(--art-w) / var(--art-h);
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    transform-origin: 100% 100%;
+    transform: translate(42%, 48%) rotate(-38deg);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+        transform 0.55s cubic-bezier(0.22, 1.15, 0.36, 1),
+        opacity 0.35s ease;
+
+    &--visible {
+        transform: translate(0, 0) rotate(0deg);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    &__body {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        image-rendering: pixelated;
+        pointer-events: none;
+    }
+
+    &__btn {
+        position: absolute;
+        left: calc(var(--x) / var(--art-w) * 100%);
+        top: calc(var(--y) / var(--art-h) * 100%);
+        width: calc(var(--w) / var(--art-w) * 100%);
+        height: calc(var(--h) / var(--art-h) * 100%);
+        padding: 0;
+        border: 0;
+        margin: 0;
+        background: transparent;
+        cursor: pointer;
+        appearance: none;
+
+        img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            image-rendering: pixelated;
+            pointer-events: none;
+        }
+    }
+}
