@@ -12,3 +12,4 @@ export * from './cores/shared/users/users.core.service';
 export * from './cores/shared/auth/auth.core.service';
 export * from './cores/guest/stream.core.service';
 export * from './cores/guest/schedule.core.service';
+export * from './cores/guest/guest-playback.core.service';
