@@ -310,7 +310,11 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  /** Wait for a real m3u8 whose listed .ts actually exists (avoids attach→404 loop). */
+  /**
+   * Wait until m3u8 lists a .ts that actually exists.
+   * Probe from the *end* (live edge) — ffmpeg delete_segments often 404s the first
+   * MEDIA-SEQUENCE entry while newer ones are fine (seen as m3u8 spam, no air).
+   */
   private async waitUntilOk(url: string, gen: number, tries = 60): Promise<void> {
     let last = 0;
     for (let i = 0; i < tries; i++) {
@@ -324,30 +328,38 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
         last = res.status;
         if (res.ok) {
           const body = await res.text();
-          const seg = body
+          const segs = body
             .split(/\r?\n/)
             .map((l) => l.trim())
-            .find((l) => !!l && !l.startsWith('#') && /\.ts($|\?)/i.test(l));
-          if (!seg) {
+            .filter((l) => !!l && !l.startsWith('#') && /\.ts($|\?)/i.test(l));
+          if (!segs.length) {
             await this.delay(500);
             continue;
           }
-          const segUrl = new URL(seg, url).href;
-          const segRes = await fetch(segUrl, {
-            method: 'GET',
-            cache: 'no-store',
-            mode: 'cors',
-            headers: { Range: 'bytes=0-0' },
-          });
-          last = segRes.status;
-          // 200/206 = segment exists; cancel body so we don't pull the whole .ts
-          if (segRes.ok || segRes.status === 206) {
+          // Newest first — oldest sliding-window entries are often already deleted
+          const candidates = [...segs].reverse().slice(0, 5);
+          for (const seg of candidates) {
+            const segUrl = new URL(seg, url).href;
+            const segRes = await fetch(segUrl, {
+              method: 'GET',
+              cache: 'no-store',
+              mode: 'cors',
+              headers: { Range: 'bytes=0-0' },
+            });
+            last = segRes.status;
+            if (segRes.ok || segRes.status === 206) {
+              try {
+                await segRes.body?.cancel();
+              } catch {
+                /* ignore */
+              }
+              return;
+            }
             try {
               await segRes.body?.cancel();
             } catch {
               /* ignore */
             }
-            return;
           }
         }
         // 404/503 while ffmpeg is seeking — just wait
