@@ -67,8 +67,13 @@
     z-index: 3;
     display: grid;
     place-items: center;
+    align-content: center;
+    gap: 0.55rem;
     padding: 4%;
     box-sizing: border-box;
+    border: 0;
+    margin: 0;
+    width: 100%;
     font-family: 'Press Start 2P', monospace;
     font-size: clamp(10px, 14cqw, 22px);
     line-height: 1.2;
@@ -79,7 +84,18 @@
       0 0 4px rgba(225, 38, 38, 0.85),
       0 0 1px #ff6b6b;
     background: #000;
+    cursor: pointer;
     animation: off-air-blink 1.6s steps(1, end) infinite;
+  }
+
+  &__off-air-hint {
+    display: block;
+    font-size: clamp(5px, 5.5cqw, 9px);
+    color: #c8b8a0;
+    text-shadow: none;
+    letter-spacing: 0.02em;
+    opacity: 0.85;
+    animation: none;
   }
 
   &__volume {

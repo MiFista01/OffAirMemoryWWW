@@ -59,6 +59,13 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   /** SN that already caused a remanifest — second 404 → reboot, no seek thrash */
   private badFragSn: number | string | null = null;
   private recoverCooldownUntil = 0;
+  private prepare503Timer?: ReturnType<typeof setTimeout>;
+  private prepare503Started = 0;
+  private prepare503Count = 0;
+  private offAirRetryTimer?: ReturnType<typeof setTimeout>;
+  private offAirRetryCount = 0;
+  /** User turned CRT off via bezel — don't auto-retry until they turn it on. */
+  private userPoweredOff = false;
   private onWaiting = () => this.onBufferIssue();
   private onStalled = () => this.onBufferIssue();
   /** Live HLS must not go OFF AIR on `ended` — usually encoder gap or empty window. */
@@ -71,12 +78,19 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   };
   private onPlaying = () => {
     clearTimeout(this.stallTimer);
+    clearTimeout(this.offAirRetryTimer);
+    this.offAirRetryCount = 0;
     this.loading = false;
     // Playback recovered — clear hole-recovery state
+    this.frag404Burst = 0;
+    this.frag404BurstStarted = 0;
     this.remanifestCount = 0;
     this.badFragSn = null;
     this.frag404Streak = 0;
     this.lastFrag404Url = '';
+    this.prepare503Started = 0;
+    this.prepare503Count = 0;
+    clearTimeout(this.prepare503Timer);
   };
 
   crt: CrtState = 'waiting';
@@ -104,6 +118,9 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.playbackSub = this.playback.volumeStep.subscribe((delta) => {
       this.adjustVolume(delta);
     });
+    this.playbackSub.add(
+      this.playback.powerToggle.subscribe(() => this.onPowerToggle()),
+    );
 
     this.routeSub = this.route.paramMap.subscribe((params) => {
       const slug = params.get('slug');
@@ -114,6 +131,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       if (slug === this.slug && this.hls) return;
       clearTimeout(this.crtTimer);
       clearTimeout(this.stallTimer);
+      clearTimeout(this.offAirRetryTimer);
       this.stopHeartbeat();
       this.frag404Streak = 0;
       this.lastFrag404Url = '';
@@ -122,14 +140,29 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       this.badFragSn = null;
       this.recoverCooldownUntil = 0;
       this.rebootCount = 0;
+      this.offAirRetryCount = 0;
       this.slug = slug;
+      if (this.userPoweredOff) {
+        this.crt = 'off-air';
+        this.playback.setTvOn(false);
+        this.loading = false;
+        return;
+      }
       this.crt = 'waiting';
       void this.bootStream();
     });
   }
 
   onVideoClick(): void {
-    if (this.crt === 'off-air' || this.crt === 'powering-off') return;
+    if (this.crt === 'off-air') {
+      if (this.userPoweredOff) {
+        this.powerOnByUser();
+        return;
+      }
+      this.retryFromOffAir();
+      return;
+    }
+    if (this.crt === 'powering-off') return;
     const v = this.videoRef.nativeElement;
     this.soundOn = true;
     this.needsGesture = false;
@@ -137,6 +170,42 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     v.volume = 1;
     void v.play().catch(() => undefined);
     this.flashVolumeHud();
+  }
+
+  private onPowerToggle(): void {
+    if (
+      this.crt === 'off-air' ||
+      this.crt === 'waiting' ||
+      this.userPoweredOff
+    ) {
+      this.powerOnByUser();
+      return;
+    }
+    if (this.crt === 'powering-off') return;
+    this.powerOffByUser();
+  }
+
+  private powerOffByUser(): void {
+    this.userPoweredOff = true;
+    this.playback.setTvOn(false);
+    clearTimeout(this.offAirRetryTimer);
+    this.offAirRetryCount = 99;
+    this.goOffAir('Power off');
+  }
+
+  private powerOnByUser(): void {
+    if (!this.slug) return;
+    this.userPoweredOff = false;
+    this.playback.setTvOn(true);
+    this.offAirRetryCount = 0;
+    clearTimeout(this.offAirRetryTimer);
+    this.rebootCount = 0;
+    this.remanifestCount = 0;
+    this.badFragSn = null;
+    this.crt = 'waiting';
+    this.error = null;
+    this.waitMessage = 'Подключаем эфир…';
+    void this.bootStream();
   }
 
   private adjustVolume(delta: -1 | 1): void {
@@ -191,6 +260,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     if (this.crt !== 'powering-on') return;
     clearTimeout(this.crtTimer);
     this.crt = 'on';
+    this.playback.setTvOn(true);
   }
 
   private goOffAir(message?: string): void {
@@ -198,12 +268,17 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
     clearTimeout(this.stallTimer);
     clearTimeout(this.crtTimer);
+    clearTimeout(this.offAirRetryTimer);
     this.stopHeartbeat();
     this.bootGen += 1;
     this.loading = false;
     this.rebooting = false;
     this.needsGesture = false;
     if (message) this.error = message;
+
+    const noRetry =
+      !!message &&
+      /No channel|not supported|HLS not supported|Power off/i.test(message);
 
     this.crt = 'powering-off';
     const video = this.videoRef?.nativeElement;
@@ -221,7 +296,46 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
         video.load();
       }
       this.crt = 'off-air';
+      this.playback.setTvOn(false);
+      // Nest restart / wiped HLS → don't sit on OFF AIR until manual reload
+      if (!noRetry && this.slug) {
+        this.scheduleOffAirRetry(message);
+      }
     }, CRT_POWER_OFF_MS);
+  }
+
+  /** After Nest reboot / playlist wipe: auto /start like channel switch. */
+  private scheduleOffAirRetry(message?: string): void {
+    clearTimeout(this.offAirRetryTimer);
+    if (!this.slug) return;
+    // Real schedule off-air — a couple of probes, then stop
+    const softOff = !!message && /не в эфире/i.test(message);
+    const max = softOff ? 2 : 5;
+    if (this.offAirRetryCount >= max) return;
+
+    const delay = softOff
+      ? 8000
+      : Math.min(12_000, 2500 + this.offAirRetryCount * 2000);
+    this.offAirRetryTimer = setTimeout(() => this.retryFromOffAir(), delay);
+  }
+
+  private retryFromOffAir(): void {
+    if (!this.slug) return;
+    if (this.userPoweredOff) return;
+    if (this.crt !== 'off-air' && this.crt !== 'waiting') return;
+    if (this.loading || this.rebooting) return;
+
+    this.offAirRetryCount += 1;
+    this.rebootCount = 0;
+    this.remanifestCount = 0;
+    this.badFragSn = null;
+    this.crt = 'waiting';
+    this.error = null;
+    this.waitMessage = 'Переподключаем эфир…';
+    console.warn(
+      `[tv] off-air retry ${this.offAirRetryCount} — /start (Nest may have restarted)`,
+    );
+    void this.bootStream();
   }
 
   private async bootStream(): Promise<void> {
@@ -232,6 +346,8 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.hls?.destroy();
     this.hls = undefined;
     clearTimeout(this.stallTimer);
+    // Touch idle TTL during /start + /status poll (before MANIFEST_PARSED).
+    this.startHeartbeat();
 
     if (this.crt === 'off-air' || this.crt === 'powering-off') {
       this.crt = 'waiting';
@@ -304,7 +420,9 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       const u = new URL(streamUrl, window.location.origin);
       if (!u.pathname.startsWith('/stream')) return streamUrl;
       const base = (environment.streamBase || '').replace(/\/$/, '');
-      return base ? `${base}${u.pathname}` : u.pathname;
+      // Always absolute — relative `/stream/...` breaks `new URL(seg, playlistUrl)`
+      // in waitUntilOk (TypeError → silent m3u8-only loop, no .ts).
+      return base ? `${base}${u.pathname}` : new URL(u.pathname, window.location.origin).href;
     } catch {
       return streamUrl;
     }
@@ -313,58 +431,69 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   /**
    * Wait until m3u8 lists a .ts that actually exists.
    * Probe from the *end* (live edge) — ffmpeg delete_segments often 404s the first
-   * MEDIA-SEQUENCE entry while newer ones are fine (seen as m3u8 spam, no air).
+   * MEDIA-SEQUENCE entry while newer ones are fine.
    */
   private async waitUntilOk(url: string, gen: number, tries = 60): Promise<void> {
+    const playlistUrl = new URL(url, window.location.origin).href;
     let last = 0;
+    let withSegs = 0;
+
     for (let i = 0; i < tries; i++) {
       if (gen !== this.bootGen) return;
       try {
-        const res = await fetch(url, {
+        const res = await fetch(playlistUrl, {
           method: 'GET',
           cache: 'no-store',
           mode: 'cors',
         });
         last = res.status;
-        if (res.ok) {
-          const body = await res.text();
-          const segs = body
-            .split(/\r?\n/)
-            .map((l) => l.trim())
-            .filter((l) => !!l && !l.startsWith('#') && /\.ts($|\?)/i.test(l));
-          if (!segs.length) {
-            await this.delay(500);
-            continue;
-          }
-          // Newest first — oldest sliding-window entries are often already deleted
-          const candidates = [...segs].reverse().slice(0, 5);
-          for (const seg of candidates) {
-            const segUrl = new URL(seg, url).href;
-            const segRes = await fetch(segUrl, {
-              method: 'GET',
-              cache: 'no-store',
-              mode: 'cors',
-              headers: { Range: 'bytes=0-0' },
-            });
-            last = segRes.status;
-            if (segRes.ok || segRes.status === 206) {
-              try {
-                await segRes.body?.cancel();
-              } catch {
-                /* ignore */
-              }
-              return;
-            }
-            try {
-              await segRes.body?.cancel();
-            } catch {
-              /* ignore */
-            }
-          }
+        if (!res.ok) {
+          await this.delay(500);
+          continue;
         }
-        // 404/503 while ffmpeg is seeking — just wait
-      } catch {
-        /* network blip */
+
+        const body = await res.text();
+        const segs = body
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => !!l && !l.startsWith('#') && /\.ts($|\?)/i.test(l));
+        if (!segs.length) {
+          withSegs = 0;
+          await this.delay(500);
+          continue;
+        }
+        withSegs += 1;
+
+        // Newest first — oldest sliding-window entries are often already deleted
+        const candidates = [...segs].reverse().slice(0, 5);
+        for (const seg of candidates) {
+          const segUrl = new URL(seg, playlistUrl).href;
+          const segRes = await fetch(segUrl, {
+            method: 'GET',
+            cache: 'no-store',
+            mode: 'cors',
+            headers: { Range: 'bytes=0-0' },
+          });
+          last = segRes.status;
+          try {
+            await segRes.body?.cancel();
+          } catch {
+            /* ignore */
+          }
+          if (segRes.ok || segRes.status === 206) return;
+        }
+
+        // Playlist has segments for a few polls but all probed .ts 404 —
+        // do NOT attach: that freezes on one frame and storms 404s.
+        // Keep waiting for a real playable .ts (encode still starting).
+        if (withSegs >= 6) {
+          console.warn(
+            '[tv] playlist segs all 404 — keep waiting (likely mid-wipe)',
+          );
+          withSegs = 0;
+        }
+      } catch (e) {
+        console.warn('[tv] waitUntilOk blip', e);
       }
       await this.delay(500);
     }
@@ -466,9 +595,12 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.resumeIfPaused();
   }
 
+  private frag404Burst = 0;
+  private frag404BurstStarted = 0;
+
   /**
-   * Hole in live HLS: remanifest once (no timeline skipping — that caused
-   * forward/back flicker). Same SN still 404 → /start reboot.
+   * Hole in live HLS: remanifest once. Many different SN 404s (zombie playlist
+   * after ffmpeg died) → /start immediately — don't remanifest forever.
    */
   private recoverMissingFragment(
     playlistUrl: string,
@@ -477,6 +609,26 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     if (this.rebooting) return;
     const now = Date.now();
     if (now < this.recoverCooldownUntil) return;
+
+    if (now - this.frag404BurstStarted > 15_000) {
+      this.frag404BurstStarted = now;
+      this.frag404Burst = 0;
+    }
+    this.frag404Burst += 1;
+
+    // Sliding window of dead .ts while encode dead → /start, not remanifest spam.
+    // Threshold 4: delete_segments often yields 1–2 benign 404s at the live edge.
+    if (this.frag404Burst >= 4 || this.remanifestCount >= 2) {
+      console.warn(
+        `[tv] ${this.frag404Burst} frag 404s — /start (encode likely dead)`,
+      );
+      this.recoverCooldownUntil = now + 8_000;
+      this.frag404Burst = 0;
+      this.remanifestCount = 0;
+      this.badFragSn = null;
+      this.rebootStream();
+      return;
+    }
 
     if (sn != null && sn === this.badFragSn && this.remanifestCount >= 1) {
       console.warn(
@@ -490,7 +642,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     }
 
     if (sn != null) this.badFragSn = sn;
-    this.recoverCooldownUntil = now + 2_500;
+    this.recoverCooldownUntil = now + 1_200;
     this.recoverStaleHls(playlistUrl);
   }
 
@@ -520,7 +672,6 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       const sep = playlistUrl.includes('?') ? '&' : '?';
       hls.loadSource(`${playlistUrl}${sep}_=${Date.now()}`);
       hls.startLoad(-1);
-      // One gentle live snap after manifest lands — not every 404
       setTimeout(() => this.nudgeToLiveEdge(), 600);
     } catch {
       if (!this.rebooting) this.rebootStream();
@@ -539,6 +690,36 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     clearTimeout(this.stallTimer);
     // NAS encode can stall briefly — wait longer before /start reboot
     this.stallTimer = setTimeout(() => this.recoverOrReboot(), 8000);
+  }
+
+  /** Episode seam: ffmpeg alive, m3u8 not ready yet (local /stream → 503). */
+  private handlePlaylistPreparing(): void {
+    if (this.rebooting) return;
+    const now = Date.now();
+    if (!this.prepare503Started) this.prepare503Started = now;
+    this.prepare503Count += 1;
+    const elapsed = now - this.prepare503Started;
+    // Up to ~2 min (DuckTales→Spider-Man cold seek on NAS/dev)
+    if (elapsed < 120_000) {
+      if (this.prepare503Count === 1 || this.prepare503Count % 5 === 0) {
+        console.warn(
+          `[tv] playlist HTTP 503 — preparing (${Math.round(elapsed / 1000)}s, wait)`,
+        );
+      }
+      this.loading = true;
+      this.waitMessage = 'Следующая серия…';
+      clearTimeout(this.prepare503Timer);
+      const delay = Math.min(2000 + this.prepare503Count * 400, 6000);
+      this.prepare503Timer = setTimeout(() => {
+        if (this.rebooting) return;
+        this.hls?.startLoad(-1);
+      }, delay);
+      return;
+    }
+    console.warn('[tv] playlist 503 too long — /start reattach');
+    this.prepare503Started = 0;
+    this.prepare503Count = 0;
+    this.rebootStream();
   }
 
   private recoverOrReboot(): void {
@@ -561,7 +742,11 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
   private rebootStream(): void {
     if (this.rebooting || this.loading) return;
-    if (this.crt === 'off-air' || this.crt === 'powering-off') return;
+    // Allow recover even from off-air / powering-off — playlist 404 often left us there
+    if (this.crt === 'powering-off') {
+      clearTimeout(this.crtTimer);
+      this.crt = 'waiting';
+    }
     if (this.isActuallyPlaying()) return;
 
     const now = Date.now();
@@ -571,12 +756,13 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     }
     this.rebootCount += 1;
     if (this.rebootCount > 4) {
-      console.warn('[tv] reboot circuit open — off air');
+      console.warn('[tv] reboot circuit open — off air + auto-retry');
       this.goOffAir('Broadcast ended');
       return;
     }
 
     this.rebooting = true;
+    if (this.crt === 'off-air') this.crt = 'waiting';
     console.warn('[tv] stall — /start + reattach HLS');
     void this.bootStream();
   }
@@ -664,12 +850,20 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
           data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR
         ) {
           const code = (data.response as { code?: number } | undefined)?.code;
-          if (warmingUp && (code === 404 || code === 503)) {
-            setTimeout(() => this.hls?.startLoad(), 1000);
+          // 503 = Nest static "HLS preparing" (episode seam / seek) — wait, no /start storm.
+          if (code === 503) {
+            this.handlePlaylistPreparing();
             return;
           }
           if (code === 404 || code === 410) {
-            this.goOffAir('Broadcast ended');
+            if (warmingUp) {
+              setTimeout(() => this.hls?.startLoad(), 1500);
+              return;
+            }
+            console.warn(
+              `[tv] playlist HTTP ${code} — /start reattach (not off air)`,
+            );
+            this.rebootStream();
             return;
           }
         }
@@ -708,6 +902,8 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     clearTimeout(this.stallTimer);
     clearTimeout(this.crtTimer);
     clearTimeout(this.volumeHudTimer);
+    clearTimeout(this.offAirRetryTimer);
+    clearTimeout(this.prepare503Timer);
     this.stopHeartbeat();
     const video = this.videoRef?.nativeElement;
     video?.removeEventListener('waiting', this.onWaiting);

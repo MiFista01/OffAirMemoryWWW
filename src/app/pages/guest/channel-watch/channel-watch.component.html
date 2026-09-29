@@ -26,7 +26,15 @@
   }
 
   @if (crt === 'off-air') {
-    <div class="watch__off-air">OFF AIR</div>
+    <button
+      type="button"
+      class="watch__off-air"
+      (click)="onVideoClick()"
+      aria-label="Переподключить эфир"
+    >
+      OFF AIR
+      <span class="watch__off-air-hint">нажми — переподключить</span>
+    </button>
   }
 
   @if (needsGesture && crt === 'on') {
