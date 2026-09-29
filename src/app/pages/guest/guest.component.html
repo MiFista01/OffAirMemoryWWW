@@ -1,6 +1,82 @@
-<div class="stage" [class.stage--zoomed]="zoomed">
-  <div class="area">
+<div
+  class="stage"
+  [class.stage--zoomed]="zoomed && !isWallOpen"
+  [class.stage--wall]="isWallOpen"
+>
+  <div
+    class="area"
+    [style.--wall-ox]="wallFocusX"
+    [style.--wall-oy]="wallFocusY"
+  >
     <img class="area__bg" src="/imgs/bg.webp" alt="">
+
+    <button
+      type="button"
+      class="wall-pic"
+      [class.wall-pic--open]="wallOpen === 'faq'"
+      [style.--x]="faqPic.x"
+      [style.--y]="faqPic.y"
+      [style.--w]="faqPic.w"
+      [style.--h]="faqPic.h"
+      aria-label="FAQ"
+      [attr.aria-expanded]="wallOpen === 'faq'"
+      (click)="onFaqClick()"
+    >
+      <span class="wall-pic__hang">
+        <span class="wall-pic__flip">
+          <span class="wall-pic__face wall-pic__face--front">
+            <img src="/imgs/faq.webp" alt="">
+          </span>
+          <span class="wall-pic__face wall-pic__face--back">
+            <img src="/imgs/faq blank.webp" alt="">
+            <span class="wall-pic__text wall-pic__text--faq">
+              <b>FAQ</b>
+              <ul>
+                <li>красная кнопка — ТВ вкл/выкл</li>
+                <hr>
+                <li>жёлтая кнопка — пульт при движении</li>
+                <hr>
+                <li>GUID (на пульте) — расписание</li>
+                <hr>
+                <li>± (по бокам на пульте) — громкость</li>
+                <hr>
+                <li>сегмент перезапускается <span>→</span> перезагрузка</li>
+              </ul>
+            </span>
+          </span>
+        </span>
+      </span>
+    </button>
+
+    <button
+      type="button"
+      class="wall-pic"
+      [class.wall-pic--open]="wallOpen === 'why'"
+      [style.--x]="whyPic.x"
+      [style.--y]="whyPic.y"
+      [style.--w]="whyPic.w"
+      [style.--h]="whyPic.h"
+      aria-label="О проекте"
+      [attr.aria-expanded]="wallOpen === 'why'"
+      (click)="onWhyClick()"
+    >
+      <span class="wall-pic__hang">
+        <span class="wall-pic__flip">
+          <span class="wall-pic__face wall-pic__face--front">
+            <img src="/imgs/why.webp" alt="">
+          </span>
+          <span class="wall-pic__face wall-pic__face--back">
+            <img src="/imgs/why blank.webp" alt="">
+            <span class="wall-pic__text wall-pic__text--why">
+              <b>WHY?</b>
+              Не ради денег — ради ощущения.
+              Хочу вернуть людям моего возраста ту атмосферу детства у экрана: щелчок пульта, тёплый гул, вечер на диване.
+            </span>
+          </span>
+        </span>
+      </span>
+    </button>
+
     <div class="tv">
       <router-outlet></router-outlet>
       <img class="tv__frame" src="/imgs/tv.webp" alt="">
@@ -34,7 +110,7 @@
       </button>
     </div>
 
-    @if (!zoomed) {
+    @if (!zoomed && !isWallOpen) {
       <button
         type="button"
         class="hint-arrow"
@@ -48,7 +124,7 @@
   </div>
 </div>
 
-@if (zoomed) {
+@if (zoomed && !isWallOpen) {
   <button
     type="button"
     class="hint-arrow hint-arrow--out"

@@ -38,6 +38,8 @@ export class GuestComponent implements OnInit, OnDestroy {
   remoteEnabled = true;
   tvOn = true;
   zoomed = false;
+  /** Open wall picture: FAQ (left) or WHY (right). */
+  wallOpen: 'faq' | 'why' | null = null;
   activeSlug = 'nickelodeon';
   pressedId: string | null = null;
   guideOpen = false;
@@ -154,6 +156,36 @@ export class GuestComponent implements OnInit, OnDestroy {
     h: 9,
   };
 
+  /** Wall FAQ picture on 384×216 art — left of TV. Tweak x/y if off. */
+  readonly faqPic = {
+    x: 36,
+    y: 52,
+    w: 48,
+    h: 56,
+  };
+
+  /** Wall WHY picture — right of TV. Tweak x/y if off. */
+  readonly whyPic = {
+    x: 248,
+    y: 58,
+    w: 48,
+    h: 39,
+  };
+
+  get wallFocusX(): number {
+    const pic = this.wallOpen === 'why' ? this.whyPic : this.faqPic;
+    return ((pic.x + pic.w / 2) / 384) * 100;
+  }
+
+  get wallFocusY(): number {
+    const pic = this.wallOpen === 'why' ? this.whyPic : this.faqPic;
+    return ((pic.y + pic.h / 2) / 216) * 100;
+  }
+
+  get isWallOpen(): boolean {
+    return this.wallOpen !== null;
+  }
+
   constructor(
     private router: Router,
     private route: ActivatedRoute,
@@ -197,6 +229,32 @@ export class GuestComponent implements OnInit, OnDestroy {
     }
   }
 
+  onFaqClick(): void {
+    this.toggleWallPic('faq');
+  }
+
+  onWhyClick(): void {
+    this.toggleWallPic('why');
+  }
+
+  private toggleWallPic(kind: 'faq' | 'why'): void {
+    if (this.wallOpen === kind) {
+      this.closeWallPic();
+      return;
+    }
+    this.zoomed = false;
+    this.guideOpen = false;
+    this.remoteVisible = false;
+    this.remoteHover = false;
+    this.arrowVisible = false;
+    clearTimeout(this.hideTimer);
+    this.wallOpen = kind;
+  }
+
+  closeWallPic(): void {
+    this.wallOpen = null;
+  }
+
   btnSrc(btn: RemoteBtn): string {
     const held =
       this.pressedId === btn.id ||
@@ -221,6 +279,7 @@ export class GuestComponent implements OnInit, OnDestroy {
 
   onGuideClick(): void {
     this.pressedId = null;
+    if (this.isWallOpen) this.closeWallPic();
     this.guideOpen = !this.guideOpen;
     if (this.guideOpen) {
       this.remoteVisible = false;
@@ -234,7 +293,7 @@ export class GuestComponent implements OnInit, OnDestroy {
   }
 
   onRemoteEnter(): void {
-    if (this.guideOpen || !this.remoteEnabled) return;
+    if (this.guideOpen || this.isWallOpen || !this.remoteEnabled) return;
     this.remoteHover = true;
     this.showUi();
   }
@@ -275,6 +334,10 @@ export class GuestComponent implements OnInit, OnDestroy {
 
   @HostListener('document:keydown.escape')
   onEscape(): void {
+    if (this.isWallOpen) {
+      this.closeWallPic();
+      return;
+    }
     if (this.guideOpen) {
       this.guideOpen = false;
       return;
@@ -295,6 +358,10 @@ export class GuestComponent implements OnInit, OnDestroy {
   }
 
   onArrowClick(): void {
+    if (this.isWallOpen) {
+      this.closeWallPic();
+      return;
+    }
     this.zoomed = !this.zoomed;
     this.arrowVisible = false;
     clearTimeout(this.hideTimer);
@@ -307,6 +374,7 @@ export class GuestComponent implements OnInit, OnDestroy {
   }
 
   private showUi(): void {
+    if (this.isWallOpen) return;
     this.arrowVisible = true;
     if (!this.guideOpen && this.remoteEnabled) {
       this.remoteVisible = true;

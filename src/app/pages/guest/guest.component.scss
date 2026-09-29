@@ -1,3 +1,21 @@
+@property --view-scale {
+    syntax: '<number>';
+    inherits: true;
+    initial-value: 1;
+}
+
+@property --view-fx {
+    syntax: '<number>';
+    inherits: true;
+    initial-value: 50;
+}
+
+@property --view-fy {
+    syntax: '<number>';
+    inherits: true;
+    initial-value: 50;
+}
+
 :host {
     display: block;
     width: 100%;
@@ -20,9 +38,15 @@
     --screen-y: 85;
     --screen-w: 101;
     --screen-h: 61;
-    --ox: calc((var(--screen-x) + var(--screen-w) / 2) / var(--art-w) * 100%);
-    --oy: calc((var(--screen-y) + var(--screen-h) / 2) / var(--art-h) * 100%);
+    // unitless % of art (for animatable zoom focus)
+    --ox: calc((var(--screen-x) + var(--screen-w) / 2) / var(--art-w) * 100);
+    --oy: calc((var(--screen-y) + var(--screen-h) / 2) / var(--art-h) * 100);
     --zoom: 2.55;
+    --wall-zoom: 3.45;
+    --view-scale: 1;
+    --view-fx: 50;
+    --view-fy: 50;
+    --view-cy: 50dvh;
 
     position: absolute;
     left: 0;
@@ -30,11 +54,15 @@
     width: max(100vw, calc(100dvh * var(--art-w) / var(--art-h)));
     height: max(100dvh, calc(100vw * var(--art-h) / var(--art-w)));
     transform-origin: 0 0;
-    transform: translate(
-        calc((100vw - 100%) / 2),
-        calc((100dvh - 100%) / 2)
-    );
-    transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+    // Same transform chain always → linear zoom path (no matrix arc)
+    transform:
+        translate(50vw, var(--view-cy))
+        scale(var(--view-scale))
+        translate(calc(var(--view-fx) * -1%), calc(var(--view-fy) * -1%));
+    transition:
+        --view-scale 1.05s cubic-bezier(0.45, 0.05, 0.7, 1),
+        --view-fx 1.05s cubic-bezier(0.45, 0.05, 0.7, 1),
+        --view-fy 1.05s cubic-bezier(0.45, 0.05, 0.7, 1);
     will-change: transform;
 
     &__bg {
@@ -94,11 +122,169 @@
 }
 
 .stage--zoomed .area {
-    // center CRT screen in the viewport, then scale
-    transform:
-        translate(50vw, 50dvh)
-        scale(var(--zoom))
-        translate(calc(var(--ox) * -1), calc(var(--oy) * -1));
+    --view-scale: var(--zoom);
+    --view-fx: var(--ox);
+    --view-fy: var(--oy);
+}
+
+.stage--wall .area {
+    --view-scale: var(--wall-zoom);
+    --view-fx: var(--wall-ox);
+    --view-fy: var(--wall-oy);
+}
+
+// Wall pictures (FAQ / WHY) — damped pendulum hover + flip
+.wall-pic {
+    --art-w: 384;
+    --art-h: 216;
+
+    position: absolute;
+    left: calc(var(--x) / var(--art-w) * 100%);
+    top: calc(var(--y) / var(--art-h) * 100%);
+    width: calc(var(--w) / var(--art-w) * 100%);
+    height: calc(var(--h) / var(--art-h) * 100%);
+    z-index: 3;
+    padding: 0;
+    border: 0;
+    margin: 0;
+    background: transparent;
+    cursor: pointer;
+    appearance: none;
+    perspective: 900px;
+    container-type: size;
+
+    &__hang {
+        display: block;
+        width: 100%;
+        height: 100%;
+        transform-origin: 50% 0%;
+        transform: rotate(0deg);
+    }
+
+    &:hover:not(.wall-pic--open) .wall-pic__hang {
+        animation: wall-pic-pendulum 2.2s cubic-bezier(0.22, 0.61, 0.36, 1) 1 both;
+    }
+
+    &__flip {
+        display: block;
+        position: relative;
+        width: 100%;
+        height: 100%;
+        transform-style: preserve-3d;
+        transition: transform 1.05s cubic-bezier(0.45, 0.05, 0.7, 1);
+    }
+
+    &--open .wall-pic__flip {
+        transform: rotateY(180deg);
+    }
+
+    &__face {
+        position: absolute;
+        inset: 0;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+        border-radius: 1px;
+        overflow: hidden;
+
+        img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: fill;
+            image-rendering: pixelated;
+            pointer-events: none;
+        }
+
+        &--back {
+            transform: rotateY(180deg);
+        }
+    }
+
+    &__text {
+        position: absolute;
+        z-index: 1;
+        display: block;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: 'Press Start 2P', monospace;
+        font-size: clamp(2px, 3.4cqw, 6px);
+        line-height: 1.55;
+        letter-spacing: -0.02em;
+        color: #2a1c14;
+        text-align: left;
+        pointer-events: none;
+        overflow: hidden;
+
+        &--faq {
+            inset: 15% 18% 16% 22%;
+        }
+
+        &--why {
+            inset: 25% 25% 25% 25%;
+            font-size: clamp(2px, 2.6cqw, 4.5px);
+            white-space: normal;
+            line-height: 1.7;
+            letter-spacing: 0;
+        }
+
+        b {
+            display: block;
+            margin-bottom: 0.45em;
+            font-weight: 400;
+            color: #1a100c;
+        }
+
+        ul {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        hr {
+            margin: 0.25em 0;
+            border: 0;
+            border-top: 1px solid rgba(42, 28, 20, 0.25);
+        }
+
+        li {
+            margin: 0 0 0.35em;
+            padding: 0;
+
+            span {
+                font-size: 1.45em;
+                line-height: 1;
+                vertical-align: -0.05em;
+            }
+        }
+    }
+}
+
+@keyframes wall-pic-pendulum {
+    0% {
+        transform: rotate(0deg);
+    }
+    12% {
+        transform: rotate(6deg);
+    }
+    28% {
+        transform: rotate(-4.5deg);
+    }
+    44% {
+        transform: rotate(3deg);
+    }
+    60% {
+        transform: rotate(-1.8deg);
+    }
+    76% {
+        transform: rotate(0.8deg);
+    }
+    90% {
+        transform: rotate(-0.25deg);
+    }
+    100% {
+        transform: rotate(0deg);
+    }
 }
 
 /* Portrait: desktop zoom (~2.95) overflows phone width → TV looks off-center. */
@@ -106,13 +292,7 @@
     .area {
         /* Fit CRT width into viewport: screenW = (101/216)*100dvh at cover height */
         --zoom: clamp(1.05, calc(0.78 * 216 / 101 * 100vw / 100dvh), 1.85);
-    }
-
-    .stage--zoomed .area {
-        transform:
-            translate(50vw, 50svh)
-            scale(var(--zoom))
-            translate(calc(var(--ox) * -1), calc(var(--oy) * -1));
+        --view-cy: 50svh;
     }
 
     .remote {
