@@ -30,10 +30,14 @@
       type="button"
       class="watch__off-air"
       (click)="onVideoClick()"
-      aria-label="Переподключить эфир"
+      [attr.aria-label]="offAirCanReconnect ? 'Переподключить эфир' : 'Эфир закончился'"
     >
       OFF AIR
-      <span class="watch__off-air-hint">нажми — переподключить</span>
+      @if (offAirCanReconnect) {
+        <span class="watch__off-air-hint">нажми — переподключить</span>
+      } @else {
+        <span class="watch__off-air-hint">эфир закончился</span>
+      }
     </button>
   }
 
