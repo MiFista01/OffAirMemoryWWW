@@ -3,10 +3,10 @@ import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { TranslateModule } from '@ngx-translate/core';
 import { filter, Subscription } from 'rxjs';
+import { TvGuideComponent } from './tv-guide/tv-guide.component';
 
-type RemoteChannel = {
+type RemoteBtn = {
   id: string;
-  slug: string;
   label: string;
   src: string;
   pressedSrc: string;
@@ -15,6 +15,7 @@ type RemoteChannel = {
   y: number;
   w: number;
   h: number;
+  slug?: string;
 };
 
 @Component({
@@ -24,6 +25,7 @@ type RemoteChannel = {
     CommonModule,
     RouterModule,
     TranslateModule,
+    TvGuideComponent,
   ],
   templateUrl: './guest.component.html',
   styleUrl: './guest.component.scss',
@@ -33,10 +35,23 @@ export class GuestComponent implements OnInit, OnDestroy {
   zoomed = false;
   activeSlug = 'nickelodeon';
   pressedId: string | null = null;
+  guideOpen = false;
   private remoteHover = false;
 
+  /** Center of D-pad on remote.webp (72×176). Tweak x/y if off. */
+  readonly guideBtn: RemoteBtn = {
+    id: 'guid',
+    label: 'Guide',
+    src: '/imgs/remote/guid.webp',
+    pressedSrc: '/imgs/remote/guid pressed.webp',
+    x: 26,
+    y: 40,
+    w: 22,
+    h: 25,
+  };
+
   /** Positions tuned to blank face of remote.webp (72×176). */
-  readonly channels: RemoteChannel[] = [
+  readonly channels: RemoteBtn[] = [
     {
       id: 'nick',
       slug: 'nickelodeon',
@@ -99,24 +114,31 @@ export class GuestComponent implements OnInit, OnDestroy {
       .subscribe(() => this.syncSlugFromRoute());
   }
 
-  channelSrc(ch: RemoteChannel): string {
-    const down = this.pressedId === ch.id || this.activeSlug === ch.slug;
-    return encodeURI(down ? ch.pressedSrc : ch.src);
+  btnSrc(btn: RemoteBtn): string {
+    const held =
+      this.pressedId === btn.id ||
+      (btn.id === 'guid' ? this.guideOpen : this.activeSlug === btn.slug);
+    return encodeURI(held ? btn.pressedSrc : btn.src);
   }
 
-  onChannelPointerDown(ch: RemoteChannel, ev: Event): void {
+  onBtnPointerDown(btn: RemoteBtn, ev: Event): void {
     ev.preventDefault();
-    this.pressedId = ch.id;
+    this.pressedId = btn.id;
   }
 
-  onChannelPointerUp(): void {
+  onBtnPointerUp(): void {
     this.pressedId = null;
   }
 
-  onChannelClick(ch: RemoteChannel): void {
+  onChannelClick(ch: RemoteBtn): void {
     this.pressedId = null;
-    if (this.activeSlug === ch.slug) return;
+    if (!ch.slug || this.activeSlug === ch.slug) return;
     void this.router.navigate(['tv', ch.slug], { relativeTo: this.route });
+  }
+
+  onGuideClick(): void {
+    this.pressedId = null;
+    this.guideOpen = !this.guideOpen;
   }
 
   onRemoteEnter(): void {
@@ -138,9 +160,22 @@ export class GuestComponent implements OnInit, OnDestroy {
 
   @HostListener('document:keydown.escape')
   onEscape(): void {
+    if (this.guideOpen) {
+      this.guideOpen = false;
+      return;
+    }
     if (this.zoomed) {
       this.zoomed = false;
     }
+  }
+
+  onGuideClosed(): void {
+    this.guideOpen = false;
+  }
+
+  onGuideChannelPick(slug: string): void {
+    if (!slug || this.activeSlug === slug) return;
+    void this.router.navigate(['tv', slug], { relativeTo: this.route });
   }
 
   onArrowClick(): void {

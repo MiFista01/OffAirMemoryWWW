@@ -40,6 +40,25 @@
   (pointerleave)="onRemoteLeave()"
 >
   <img class="remote__body" src="/imgs/remote/remote.webp" alt="">
+
+  <button
+    type="button"
+    class="remote__btn"
+    [style.--x]="guideBtn.x"
+    [style.--y]="guideBtn.y"
+    [style.--w]="guideBtn.w"
+    [style.--h]="guideBtn.h"
+    [attr.aria-label]="guideBtn.label"
+    [attr.aria-pressed]="guideOpen"
+    (pointerdown)="onBtnPointerDown(guideBtn, $event)"
+    (pointerup)="onBtnPointerUp()"
+    (pointerleave)="onBtnPointerUp()"
+    (pointercancel)="onBtnPointerUp()"
+    (click)="onGuideClick()"
+  >
+    <img [src]="btnSrc(guideBtn)" alt="">
+  </button>
+
   @for (ch of channels; track ch.id) {
     <button
       type="button"
@@ -50,13 +69,20 @@
       [style.--h]="ch.h"
       [attr.aria-label]="ch.label"
       [attr.aria-pressed]="activeSlug === ch.slug"
-      (pointerdown)="onChannelPointerDown(ch, $event)"
-      (pointerup)="onChannelPointerUp()"
-      (pointerleave)="onChannelPointerUp()"
-      (pointercancel)="onChannelPointerUp()"
+      (pointerdown)="onBtnPointerDown(ch, $event)"
+      (pointerup)="onBtnPointerUp()"
+      (pointerleave)="onBtnPointerUp()"
+      (pointercancel)="onBtnPointerUp()"
       (click)="onChannelClick(ch)"
     >
-      <img [src]="channelSrc(ch)" alt="">
+      <img [src]="btnSrc(ch)" alt="">
     </button>
   }
 </div>
+
+<app-tv-guide
+  [open]="guideOpen"
+  [activeSlug]="activeSlug"
+  (closed)="onGuideClosed()"
+  (channelPick)="onGuideChannelPick($event)"
+/>
