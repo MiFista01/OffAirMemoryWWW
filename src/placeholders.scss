@@ -24,17 +24,47 @@
 
 %customGuestScrollbar {
     &::-webkit-scrollbar {
-        width: 10px;
+        width: 8px;
+        height: 8px;
     }
 
     &::-webkit-scrollbar-track {
-        background: $input-bg-color;
+        background: color-mix(in srgb, $center-bg-color 55%, $main-bg-color);
+        border-radius: 0;
     }
 
     &::-webkit-scrollbar-thumb {
-        background: $input-border-color;
-        border-radius: 10px;
+        background: color-mix(in srgb, $header-bottom-color 70%, $up-menu-color);
+        border-radius: 0;
+        border: 1px solid color-mix(in srgb, $header-top-color 50%, transparent);
     }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: $header-top-color;
+    }
+}
+
+/** Shared wood bar for guest TV chrome (guide header/footer). */
+%guestWoodBar {
+    background: linear-gradient(to bottom, $header-top-color, $header-bottom-color);
+    color: #f8f0e2;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+/** Floating guest panel — room plastic / wood overlay. */
+%guestPanelShell {
+    border-radius: calc(#{$border-radius} * 1.6);
+    border: 2px solid color-mix(in srgb, $header-top-color 70%, #000);
+    background: linear-gradient(
+        180deg,
+        color-mix(in srgb, $center-bg-color 82%, $main-bg-color) 0%,
+        $center-bg-color 55%,
+        color-mix(in srgb, $center-bg-color 75%, $main-bg-color) 100%
+    );
+    box-shadow:
+        0 14px 28px rgba(40, 28, 16, 0.38),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 0 -1px 0 rgba(40, 28, 16, 0.18);
 }
 
 %customUserScrollbar {
