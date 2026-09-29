@@ -1,0 +1,127 @@
+@if (open) {
+  <div class="guide-backdrop" (click)="close()" aria-hidden="true"></div>
+
+  <section
+    class="guide"
+    role="dialog"
+    aria-modal="true"
+    aria-label="ТВ-гид"
+    (click)="$event.stopPropagation()"
+  >
+    <header class="guide__head">
+      <div class="guide__head-left">
+        <span class="guide__clock">{{ clockLabel() }}</span>
+        @if (guide) {
+          <span class="guide__date">{{ guide.date }}</span>
+        }
+      </div>
+      <h2 class="guide__title">ТВ-ГИД</h2>
+      <button type="button" class="guide__close" (click)="close()" aria-label="Закрыть">
+        ✕
+      </button>
+    </header>
+
+    @if (loading) {
+      <p class="guide__status">Загрузка сетки…</p>
+    } @else if (error) {
+      <p class="guide__status guide__status--err">{{ error }}</p>
+    } @else if (guide && !guide.channels.length) {
+      <p class="guide__status">Нет активных каналов</p>
+    } @else if (guide) {
+      <div class="guide__body" #scrollBox>
+        <div class="guide__grid" [style.width.px]="chColW + trackW()">
+          <div class="guide__time-row">
+            <div class="guide__ch-pad" [style.width.px]="chColW"></div>
+            <div class="guide__times" [style.width.px]="trackW()">
+              @for (m of hourMarks(); track m.label + m.left) {
+                <span class="guide__tick" [style.left.px]="m.left">{{ m.label }}</span>
+              }
+            </div>
+          </div>
+
+          @for (ch of guide.channels; track ch.id) {
+            <div
+              class="guide__row"
+              [class.guide__row--active]="ch.slug === activeSlug"
+            >
+              <button
+                type="button"
+                class="guide__ch"
+                [style.width.px]="chColW"
+                (click)="openChannel(ch)"
+              >
+                <span class="guide__ch-name">{{ ch.name }}</span>
+                <span class="guide__ch-slug">{{ ch.slug }}</span>
+              </button>
+
+              <div class="guide__track" [style.width.px]="trackW()">
+                @for (slot of ch.slots; track slot.order) {
+                  <button
+                    type="button"
+                    class="guide__slot"
+                    [class.guide__slot--live]="isLive(slot)"
+                    [class.guide__slot--sel]="isSelected(ch, slot)"
+                    [ngStyle]="slotStyle(slot)"
+                    (click)="select(ch, slot)"
+                    [attr.title]="slot.title + ' ' + epLabel(slot)"
+                  >
+                    @if (isLive(slot)) {
+                      <span
+                        class="guide__slot-prog"
+                        [style.width.%]="progressPct(slot)"
+                      ></span>
+                    }
+                    <span class="guide__slot-txt">
+                      {{ slot.title }}
+                      @if (epLabel(slot)) {
+                        <em>{{ epLabel(slot) }}</em>
+                      }
+                    </span>
+                  </button>
+                }
+
+                @if (nowPctInWindow() >= 0) {
+                  <div
+                    class="guide__now"
+                    [style.left.px]="nowLeft()"
+                    aria-hidden="true"
+                  ></div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+
+      @if (selected) {
+        <footer class="guide__foot">
+          <div class="guide__foot-meta">
+            <div class="guide__foot-ch">{{ selected.channel.name }}</div>
+            <div class="guide__foot-title">
+              {{ selected.slot.title }}
+              @if (epLabel(selected.slot)) {
+                <span>· {{ epLabel(selected.slot) }}</span>
+              }
+            </div>
+            <div class="guide__foot-time">{{ detailTime(selected.slot) }}</div>
+            @if (isLive(selected.slot)) {
+              <div
+                class="guide__foot-bar"
+                [attr.title]="'В эфире · ' + (progressPct(selected.slot) | number:'1.0-0') + '%'"
+              >
+                <span [style.width.%]="progressPct(selected.slot)"></span>
+              </div>
+            }
+          </div>
+          <button
+            type="button"
+            class="guide__go"
+            (click)="openChannel(selected.channel)"
+          >
+            Смотреть
+          </button>
+        </footer>
+      }
+    }
+  </section>
+}
