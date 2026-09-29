@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { TranslateModule } from '@ngx-translate/core';
+import { GuestPlaybackCoreService } from '@services';
 import { filter, Subscription } from 'rxjs';
 import { TvGuideComponent } from './tv-guide/tv-guide.component';
 
@@ -49,6 +50,30 @@ export class GuestComponent implements OnInit, OnDestroy {
     w: 22,
     h: 25,
   };
+
+  /** Left/right of D-pad on remote.webp (72×176). Tweak x/y if off. */
+  readonly soundBtns: RemoteBtn[] = [
+    {
+      id: 'sound-minus',
+      label: 'Volume down',
+      src: '/imgs/remote/sound -.webp',
+      pressedSrc: '/imgs/remote/sound - pressed.webp',
+      x: 17,
+      y: 47,
+      w: 9,
+      h: 12,
+    },
+    {
+      id: 'sound-plus',
+      label: 'Volume up',
+      src: '/imgs/remote/sound +.webp',
+      pressedSrc: '/imgs/remote/sound + pressed.webp',
+      x: 48,
+      y: 47,
+      w: 9,
+      h: 12,
+    },
+  ];
 
   /** Positions tuned to blank face of remote.webp (72×176). */
   readonly channels: RemoteBtn[] = [
@@ -105,6 +130,7 @@ export class GuestComponent implements OnInit, OnDestroy {
   constructor(
     private router: Router,
     private route: ActivatedRoute,
+    private playback: GuestPlaybackCoreService,
   ) {}
 
   ngOnInit(): void {
@@ -139,6 +165,11 @@ export class GuestComponent implements OnInit, OnDestroy {
   onGuideClick(): void {
     this.pressedId = null;
     this.guideOpen = !this.guideOpen;
+  }
+
+  onSoundClick(btn: RemoteBtn): void {
+    this.pressedId = null;
+    this.playback.stepVolume(btn.id === 'sound-plus' ? 1 : -1);
   }
 
   onRemoteEnter(): void {

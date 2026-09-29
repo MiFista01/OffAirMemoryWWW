@@ -59,6 +59,25 @@
     <img [src]="btnSrc(guideBtn)" alt="">
   </button>
 
+  @for (btn of soundBtns; track btn.id) {
+    <button
+      type="button"
+      class="remote__btn"
+      [style.--x]="btn.x"
+      [style.--y]="btn.y"
+      [style.--w]="btn.w"
+      [style.--h]="btn.h"
+      [attr.aria-label]="btn.label"
+      (pointerdown)="onBtnPointerDown(btn, $event)"
+      (pointerup)="onBtnPointerUp()"
+      (pointerleave)="onBtnPointerUp()"
+      (pointercancel)="onBtnPointerUp()"
+      (click)="onSoundClick(btn)"
+    >
+      <img [src]="btnSrc(btn)" alt="">
+    </button>
+  }
+
   @for (ch of channels; track ch.id) {
     <button
       type="button"

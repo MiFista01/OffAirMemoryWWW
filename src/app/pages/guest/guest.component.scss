@@ -75,6 +75,37 @@
         translate(calc(var(--ox) * -1), calc(var(--oy) * -1));
 }
 
+/* Portrait: desktop zoom (~2.95) overflows phone width → TV looks off-center. */
+@media (max-width: 768px) and (orientation: portrait) {
+    .area {
+        /* Fit CRT width into viewport: screenW = (101/216)*100dvh at cover height */
+        --zoom: clamp(1.05, calc(0.9 * 216 / 101 * 100vw / 100dvh), 2.1);
+    }
+
+    .stage--zoomed .area {
+        transform:
+            translate(50vw, 50svh)
+            scale(var(--zoom))
+            translate(calc(var(--ox) * -1), calc(var(--oy) * -1));
+    }
+
+    .remote {
+        width: clamp(4.75rem, 22vw, 7rem);
+        right: max(0.5rem, env(safe-area-inset-right));
+        bottom: max(0.5rem, env(safe-area-inset-bottom));
+    }
+
+    .hint-arrow--out {
+        bottom: max(4%, calc(env(safe-area-inset-bottom) + 0.5rem));
+    }
+}
+
+@media (max-width: 768px) and (orientation: landscape) {
+    .area {
+        --zoom: clamp(1.6, 2.35, 2.8);
+    }
+}
+
 // Under TV (inside .area) / bottom-center when zoomed-out control (on :host)
 .hint-arrow {
     position: absolute;
@@ -135,12 +166,21 @@
 .remote {
     --art-w: 72;
     --art-h: 176;
+    // Bigger on phones: vmin tracks the short edge; vh helps in portrait.
+    --remote-w: clamp(
+        8.5rem,
+        max(38vmin, 20vh),
+        17rem
+    );
+    --remote-h-max: calc(100dvh - max(0.75rem, 2vmin));
 
     position: absolute;
-    right: max(0.75rem, 2vw);
-    bottom: max(0.75rem, 2vw);
+    right: max(0.5rem, 2vmin);
+    bottom: max(0.5rem, 2vmin);
     z-index: 20;
-    width: clamp(5.5rem, 12vw, 9.5rem);
+    width: var(--remote-w);
+    height: auto;
+    max-height: var(--remote-h-max);
     aspect-ratio: var(--art-w) / var(--art-h);
     user-select: none;
     -webkit-user-select: none;
@@ -190,5 +230,16 @@
             image-rendering: pixelated;
             pointer-events: none;
         }
+    }
+
+    @media (max-width: 900px) {
+        --remote-w: clamp(9rem, max(44vmin, 22vh), 18rem);
+    }
+
+    // Landscape phone: height is the limit — size from viewport height, not width.
+    @media (orientation: landscape) and (max-height: 520px) {
+        width: auto;
+        height: var(--remote-h-max);
+        max-height: var(--remote-h-max);
     }
 }
