@@ -9,12 +9,14 @@ import {
 import { ActivatedRoute } from '@angular/router';
 import { environment } from '@env';
 import {
+  GuestPlaybackCoreService,
   StreamCoreService,
   StreamStartResponse,
   StreamStatusResponse,
 } from '@services';
+import { LoadBarComponent } from '@widgets';
 import Hls from 'hls.js';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, Subscription } from 'rxjs';
 
 type CrtState = 'waiting' | 'powering-on' | 'on' | 'powering-off' | 'off-air';
 
@@ -26,7 +28,7 @@ const CRT_POWER_OFF_MS = 700;
 @Component({
   selector: 'app-channel-watch',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, LoadBarComponent],
   templateUrl: './channel-watch.component.html',
   styleUrl: './channel-watch.component.scss',
 })
@@ -35,6 +37,10 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   videoRef!: ElementRef<HTMLVideoElement>;
 
   private routeSub?: ReturnType<ActivatedRoute['paramMap']['subscribe']>;
+  private playbackSub?: Subscription;
+  private volumeHudTimer?: ReturnType<typeof setTimeout>;
+  private readonly volumeStep = 0.1;
+  private readonly volumeHudMs = 1400;
   private hls?: Hls;
   private slug = '';
   private streamUrl = '';
@@ -48,16 +54,40 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   private attachAt = 0;
   private frag404Streak = 0;
   private lastFrag404Url = '';
+  private remanifestAt = 0;
+  private remanifestCount = 0;
+  /** SN that already caused a remanifest — second 404 → reboot, no seek thrash */
+  private badFragSn: number | string | null = null;
+  private recoverCooldownUntil = 0;
   private onWaiting = () => this.onBufferIssue();
   private onStalled = () => this.onBufferIssue();
-  private onEnded = () => this.goOffAir();
+  /** Live HLS must not go OFF AIR on `ended` — usually encoder gap or empty window. */
+  private onEnded = () => {
+    if (this.loading || this.rebooting) return;
+    if (this.crt === 'off-air' || this.crt === 'powering-off') return;
+    console.warn('[tv] unexpected ended — recover (not off air)');
+    void firstValueFrom(this.stream.start(this.slug)).catch(() => undefined);
+    this.onBufferIssue();
+  };
   private onPlaying = () => {
     clearTimeout(this.stallTimer);
     this.loading = false;
+    // Playback recovered — clear hole-recovery state
+    this.remanifestCount = 0;
+    this.badFragSn = null;
+    this.frag404Streak = 0;
+    this.lastFrag404Url = '';
   };
 
   crt: CrtState = 'waiting';
   soundOn = false;
+  volumePercent = 0;
+  volumeHudVisible = false;
+  readonly volumeBarColor = {
+    startColor: '#2a5a2a',
+    middleColor: '#6ab04c',
+    endColor: '#c8f090',
+  };
   needsGesture = false;
   error: string | null = null;
   loading = true;
@@ -67,9 +97,14 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   constructor(
     private route: ActivatedRoute,
     private stream: StreamCoreService,
+    private playback: GuestPlaybackCoreService,
   ) {}
 
   ngAfterViewInit(): void {
+    this.playbackSub = this.playback.volumeStep.subscribe((delta) => {
+      this.adjustVolume(delta);
+    });
+
     this.routeSub = this.route.paramMap.subscribe((params) => {
       const slug = params.get('slug');
       if (!slug) {
@@ -80,6 +115,13 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       clearTimeout(this.crtTimer);
       clearTimeout(this.stallTimer);
       this.stopHeartbeat();
+      this.frag404Streak = 0;
+      this.lastFrag404Url = '';
+      this.remanifestCount = 0;
+      this.remanifestAt = 0;
+      this.badFragSn = null;
+      this.recoverCooldownUntil = 0;
+      this.rebootCount = 0;
       this.slug = slug;
       this.crt = 'waiting';
       void this.bootStream();
@@ -94,11 +136,52 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     v.muted = false;
     v.volume = 1;
     void v.play().catch(() => undefined);
+    this.flashVolumeHud();
+  }
+
+  private adjustVolume(delta: -1 | 1): void {
+    if (this.crt === 'off-air' || this.crt === 'powering-off') return;
+    const v = this.videoRef.nativeElement;
+    let vol = v.volume;
+    if (!this.soundOn && delta > 0) {
+      vol = Math.max(this.volumeStep, vol);
+    }
+    vol = Math.min(1, Math.max(0, vol + delta * this.volumeStep));
+    v.volume = vol;
+    if (vol <= 0) {
+      v.muted = true;
+      this.soundOn = false;
+      this.flashVolumeHud();
+      return;
+    }
+    v.muted = false;
+    this.soundOn = true;
+    this.needsGesture = false;
+    void v.play().catch(() => undefined);
+    this.flashVolumeHud();
+  }
+
+  private flashVolumeHud(): void {
+    if (this.crt !== 'on') return;
+    const v = this.videoRef.nativeElement;
+    const level = v.muted || !this.soundOn ? 0 : v.volume;
+    this.volumePercent = Math.round(Math.min(1, Math.max(0, level)) * 100);
+    this.volumeHudVisible = true;
+    clearTimeout(this.volumeHudTimer);
+    this.volumeHudTimer = setTimeout(() => {
+      this.volumeHudVisible = false;
+    }, this.volumeHudMs);
   }
 
   /** CRT warm-up — call only once HLS can actually play. */
   private beginPowerOn(): void {
-    if (this.crt === 'powering-on' || this.crt === 'powering-off') return;
+    if (
+      this.crt === 'on' ||
+      this.crt === 'powering-on' ||
+      this.crt === 'powering-off'
+    ) {
+      return;
+    }
     clearTimeout(this.crtTimer);
     this.crt = 'powering-on';
     this.crtTimer = setTimeout(() => this.finishPowerOn(), CRT_POWER_ON_MS);
@@ -227,7 +310,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  /** Wait for a real m3u8. 404/503 during seek is normal, not "off air". */
+  /** Wait for a real m3u8 whose listed .ts actually exists (avoids attach→404 loop). */
   private async waitUntilOk(url: string, gen: number, tries = 60): Promise<void> {
     let last = 0;
     for (let i = 0; i < tries; i++) {
@@ -239,7 +322,34 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
           mode: 'cors',
         });
         last = res.status;
-        if (res.ok) return;
+        if (res.ok) {
+          const body = await res.text();
+          const seg = body
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .find((l) => !!l && !l.startsWith('#') && /\.ts($|\?)/i.test(l));
+          if (!seg) {
+            await this.delay(500);
+            continue;
+          }
+          const segUrl = new URL(seg, url).href;
+          const segRes = await fetch(segUrl, {
+            method: 'GET',
+            cache: 'no-store',
+            mode: 'cors',
+            headers: { Range: 'bytes=0-0' },
+          });
+          last = segRes.status;
+          // 200/206 = segment exists; cancel body so we don't pull the whole .ts
+          if (segRes.ok || segRes.status === 206) {
+            try {
+              await segRes.body?.cancel();
+            } catch {
+              /* ignore */
+            }
+            return;
+          }
+        }
         // 404/503 while ffmpeg is seeking — just wait
       } catch {
         /* network blip */
@@ -330,28 +440,76 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     const v = this.videoRef?.nativeElement;
     if (!hls || !v) return;
     const live = hls.liveSyncPosition;
-    if (live != null && Number.isFinite(live)) {
-      try {
-        v.currentTime = live;
-      } catch {
-        /* ignore */
-      }
+    if (live == null || !Number.isFinite(live)) return;
+    // Only snap if we're clearly behind — avoid forward/back flicker
+    if (Math.abs(v.currentTime - live) < 1.5) {
+      this.resumeIfPaused();
+      return;
+    }
+    try {
+      v.currentTime = live;
+    } catch {
+      /* ignore */
     }
     this.resumeIfPaused();
   }
 
-  /** Playlist still points at a deleted .ts — reload manifest and snap to live. */
+  /**
+   * Hole in live HLS: remanifest once (no timeline skipping — that caused
+   * forward/back flicker). Same SN still 404 → /start reboot.
+   */
+  private recoverMissingFragment(
+    playlistUrl: string,
+    sn?: number | string,
+  ): void {
+    if (this.rebooting) return;
+    const now = Date.now();
+    if (now < this.recoverCooldownUntil) return;
+
+    if (sn != null && sn === this.badFragSn && this.remanifestCount >= 1) {
+      console.warn(
+        `[tv] fragment sn=${sn} still missing after remanifest — /start`,
+      );
+      this.recoverCooldownUntil = now + 8_000;
+      this.remanifestCount = 0;
+      this.badFragSn = null;
+      this.rebootStream();
+      return;
+    }
+
+    if (sn != null) this.badFragSn = sn;
+    this.recoverCooldownUntil = now + 2_500;
+    this.recoverStaleHls(playlistUrl);
+  }
+
+  /** Reload m3u8 and stay on live edge — do not seek mid-window. */
   private recoverStaleHls(playlistUrl: string): void {
     const hls = this.hls;
-    if (!hls) return;
-    console.warn('[tv] stale HLS fragment — remanifest + live edge');
+    if (!hls || this.rebooting) return;
+
+    const now = Date.now();
+    if (now - this.remanifestAt > 30_000) this.remanifestCount = 0;
+    if (now - this.remanifestAt < 2_000 && this.remanifestCount > 0) return;
+
+    this.remanifestAt = now;
+    this.remanifestCount += 1;
+
+    if (this.remanifestCount >= 2) {
+      console.warn('[tv] remanifest exhausted — /start reboot');
+      this.remanifestCount = 0;
+      this.badFragSn = null;
+      this.rebootStream();
+      return;
+    }
+
+    console.warn('[tv] stale HLS — remanifest + live edge');
     try {
       hls.stopLoad();
-      // cache-bust in case a proxy kept an outdated m3u8
       const sep = playlistUrl.includes('?') ? '&' : '?';
       hls.loadSource(`${playlistUrl}${sep}_=${Date.now()}`);
       hls.startLoad(-1);
-      this.nudgeToLiveEdge();
+      // One gentle live snap after manifest lands — not every 404
+      setTimeout(() => this.nudgeToLiveEdge(), 600);
     } catch {
       if (!this.rebooting) this.rebootStream();
     }
@@ -450,9 +608,14 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
         this.frag404Streak = 0;
         this.lastFrag404Url = '';
+        // Do NOT reset remanifestCount / badFragSn here — that restarted skip/remanifest thrash
         if (keepSound) {
           video.muted = false;
-          this.beginPowerOn();
+          if (this.crt === 'waiting' || this.crt === 'off-air') {
+            this.beginPowerOn();
+          } else if (this.crt !== 'powering-on' && this.crt !== 'powering-off') {
+            this.crt = 'on';
+          }
           void video.play().catch(() => undefined);
         } else {
           this.onHlsReady();
@@ -469,31 +632,17 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
           data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT
         ) {
           const code = (data.response as { code?: number } | undefined)?.code;
-          const fragUrl =
-            data.frag?.url ||
-            (data.response as { url?: string } | undefined)?.url ||
-            '';
 
-          if (code === 404 || warmingUp) {
-            // Same missing .ts over and over → soft remanifest + live edge (breaks the loop)
-            if (fragUrl && fragUrl === this.lastFrag404Url) {
-              this.frag404Streak += 1;
-            } else {
-              this.lastFrag404Url = fragUrl;
-              this.frag404Streak = 1;
-            }
-
-            if (this.frag404Streak >= 2) {
-              this.frag404Streak = 0;
-              this.lastFrag404Url = '';
-              this.recoverStaleHls(url);
-              return;
-            }
-
-            this.nudgeToLiveEdge();
-            setTimeout(() => this.hls?.startLoad(-1), warmingUp ? 1000 : 300);
+          if (code === 404) {
+            this.recoverMissingFragment(url, data.frag?.sn);
             return;
           }
+
+          if (warmingUp) {
+            setTimeout(() => this.hls?.startLoad(-1), 1000);
+            return;
+          }
+
           this.hls?.startLoad(-1);
           return;
         }
@@ -546,6 +695,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.bootGen += 1;
     clearTimeout(this.stallTimer);
     clearTimeout(this.crtTimer);
+    clearTimeout(this.volumeHudTimer);
     this.stopHeartbeat();
     const video = this.videoRef?.nativeElement;
     video?.removeEventListener('waiting', this.onWaiting);
@@ -553,6 +703,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     video?.removeEventListener('ended', this.onEnded);
     video?.removeEventListener('playing', this.onPlaying);
     this.routeSub?.unsubscribe();
+    this.playbackSub?.unsubscribe();
     this.hls?.destroy();
   }
 }

@@ -41,6 +41,26 @@
     transform-origin: center center;
   }
 
+  &__wait {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    padding: 4%;
+    box-sizing: border-box;
+    font-family: 'Press Start 2P', monospace;
+    font-size: clamp(8px, 10cqw, 14px);
+    line-height: 1.35;
+    text-align: center;
+    color: #e8dcc8;
+    pointer-events: none;
+
+    &--overlay {
+      background: rgba(0, 0, 0, 0.55);
+    }
+  }
+
   &__off-air {
     position: absolute;
     inset: 0;
@@ -60,6 +80,23 @@
       0 0 1px #ff6b6b;
     background: #000;
     animation: off-air-blink 1.6s steps(1, end) infinite;
+  }
+
+  &__volume {
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    bottom: 7%;
+    z-index: 5;
+    pointer-events: none;
+    animation: volume-hud-in 0.25s ease;
+
+    ::ng-deep .loadbar {
+      height: clamp(3px, 9cqh, 7px) !important;
+      border-radius: 0;
+      border-color: #222;
+      image-rendering: pixelated;
+    }
   }
 
   &__unmute {
@@ -180,6 +217,17 @@
     transform: scaleY(0.02) scaleX(0.02);
     filter: brightness(3);
     opacity: 0;
+  }
+}
+
+@keyframes volume-hud-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
   }
 }
 

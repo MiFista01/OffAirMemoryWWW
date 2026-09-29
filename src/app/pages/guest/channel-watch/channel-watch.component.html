@@ -16,8 +16,13 @@
 
   <div class="watch__crt" aria-hidden="true"></div>
 
-  @if (crt === 'waiting' && loading) {
-    <div class="watch__off-air watch__wait">{{ waitMessage }}</div>
+  @if (loading && crt !== 'off-air' && crt !== 'powering-off') {
+    <div
+      class="watch__wait"
+      [class.watch__wait--overlay]="crt === 'on' || crt === 'powering-on'"
+    >
+      {{ waitMessage }}
+    </div>
   }
 
   @if (crt === 'off-air') {
@@ -28,5 +33,15 @@
     <button type="button" class="watch__unmute" (click)="onVideoClick()">
       TAP FOR SOUND
     </button>
+  }
+
+  @if (volumeHudVisible && crt === 'on') {
+    <div class="watch__volume" aria-hidden="true">
+      <app-load-bar
+        [progress]="volumePercent"
+        [height]="6"
+        [color]="volumeBarColor"
+      />
+    </div>
   }
 </div>
