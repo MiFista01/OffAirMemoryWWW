@@ -462,18 +462,46 @@
 }
 
 @include respondTo('mobile') {
+  :host {
+    z-index: 50;
+  }
+
   .guide {
-    width: 100vw;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    max-width: 100%;
     height: 100dvh;
-    top: 0;
-    left: 0;
+    max-height: 100dvh;
     transform: none;
     border-radius: 0;
     box-shadow: none;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
-  .guide__ch {
-    width: 96px !important;
+  .guide__head {
+    padding-top: max($small-padding, env(safe-area-inset-top));
+  }
+
+  .guide__title {
+    font-size: 0.52rem;
+  }
+
+  .guide__body {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .guide__row,
+  .guide__track {
+    min-height: 2.55rem;
+  }
+
+  .guide__foot {
+    flex-shrink: 0;
+    gap: $small-gap;
+    padding: 0.4rem $small-padding;
+    padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
   }
 
   .guide__foot-meta {
@@ -487,5 +515,15 @@
 
   .guide__foot-ch {
     max-width: none;
+    font-size: 0.38rem;
+  }
+
+  .guide__foot-title {
+    font-size: 1.15rem;
+  }
+
+  .guide__go {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.42rem;
   }
 }

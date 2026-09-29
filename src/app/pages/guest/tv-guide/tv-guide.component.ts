@@ -41,9 +41,18 @@ export class TvGuideComponent implements OnInit, OnChanges, OnDestroy {
   guide: GuideTodayResponse | null = null;
   selected: Sel | null = null;
   nowMs = Date.now();
-  /** pixels per minute of airtime */
-  readonly ppm = 3.2;
-  readonly chColW = 132;
+  /** pixels per minute of airtime (narrower on phones) */
+  get ppm(): number {
+    return this.isMobile ? 2.35 : 3.2;
+  }
+
+  get chColW(): number {
+    return this.isMobile ? 86 : 132;
+  }
+
+  private get isMobile(): boolean {
+    return typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+  }
 
   private tick?: ReturnType<typeof setInterval>;
   private didScroll = false;
