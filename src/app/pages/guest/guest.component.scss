@@ -22,7 +22,7 @@
     --screen-h: 61;
     --ox: calc((var(--screen-x) + var(--screen-w) / 2) / var(--art-w) * 100%);
     --oy: calc((var(--screen-y) + var(--screen-h) / 2) / var(--art-h) * 100%);
-    --zoom: 2.95;
+    --zoom: 2.55;
 
     position: absolute;
     left: 0;
@@ -64,6 +64,32 @@
             image-rendering: pixelated;
             pointer-events: none;
         }
+
+        // Bottom-right CRT bezel lights (coords on 384×216)
+        &__bezel-btn {
+            position: absolute;
+            left: calc(var(--x) / 384 * 100%);
+            top: calc(var(--y) / 216 * 100%);
+            width: calc(var(--w) / 384 * 100%);
+            height: calc(var(--h) / 216 * 100%);
+            z-index: 4;
+            padding: 0;
+            border: 0;
+            margin: 0;
+            background: transparent;
+            cursor: pointer;
+            appearance: none;
+            pointer-events: auto;
+
+            img {
+                display: block;
+                width: 100%;
+                height: 100%;
+                object-fit: fill;
+                image-rendering: pixelated;
+                pointer-events: none;
+            }
+        }
     }
 }
 
@@ -79,7 +105,7 @@
 @media (max-width: 768px) and (orientation: portrait) {
     .area {
         /* Fit CRT width into viewport: screenW = (101/216)*100dvh at cover height */
-        --zoom: clamp(1.05, calc(0.9 * 216 / 101 * 100vw / 100dvh), 2.1);
+        --zoom: clamp(1.05, calc(0.78 * 216 / 101 * 100vw / 100dvh), 1.85);
     }
 
     .stage--zoomed .area {
@@ -102,7 +128,7 @@
 
 @media (max-width: 768px) and (orientation: landscape) {
     .area {
-        --zoom: clamp(1.6, 2.35, 2.8);
+        --zoom: clamp(1.45, 2.05, 2.35);
     }
 }
 
@@ -191,12 +217,15 @@
     pointer-events: none;
     transition:
         transform 0.55s cubic-bezier(0.22, 1.15, 0.36, 1),
-        opacity 0.35s ease;
+        opacity 0.55s ease;
 
     &--visible {
         transform: translate(0, 0) rotate(0deg);
         opacity: 1;
-        pointer-events: auto;
+
+        .remote__btn {
+            pointer-events: auto;
+        }
     }
 
     &__body {
@@ -221,6 +250,7 @@
         background: transparent;
         cursor: pointer;
         appearance: none;
+        pointer-events: none;
 
         img {
             display: block;

@@ -4,6 +4,34 @@
     <div class="tv">
       <router-outlet></router-outlet>
       <img class="tv__frame" src="/imgs/tv.webp" alt="">
+
+      <button
+        type="button"
+        class="tv__bezel-btn"
+        [style.--x]="tvPowerBtn.x"
+        [style.--y]="tvPowerBtn.y"
+        [style.--w]="tvPowerBtn.w"
+        [style.--h]="tvPowerBtn.h"
+        [attr.aria-label]="tvOn ? 'Turn TV off' : 'Turn TV on'"
+        [attr.aria-pressed]="tvOn"
+        (click)="onTvPowerClick(); $event.stopPropagation()"
+      >
+        <img [src]="tvPowerSrc()" alt="">
+      </button>
+
+      <button
+        type="button"
+        class="tv__bezel-btn"
+        [style.--x]="tvRemoteBtn.x"
+        [style.--y]="tvRemoteBtn.y"
+        [style.--w]="tvRemoteBtn.w"
+        [style.--h]="tvRemoteBtn.h"
+        [attr.aria-label]="remoteEnabled ? 'Hide remote on move' : 'Show remote on move'"
+        [attr.aria-pressed]="remoteEnabled"
+        (click)="onTvRemoteClick(); $event.stopPropagation()"
+      >
+        <img [src]="tvRemoteSrc()" alt="">
+      </button>
     </div>
 
     @if (!zoomed) {
@@ -34,10 +62,8 @@
 
 <div
   class="remote"
-  [class.remote--visible]="arrowVisible"
+  [class.remote--visible]="remoteVisible"
   aria-label="TV remote"
-  (pointerenter)="onRemoteEnter()"
-  (pointerleave)="onRemoteLeave()"
 >
   <img class="remote__body" src="/imgs/remote/remote.webp" alt="">
 
@@ -50,9 +76,10 @@
     [style.--h]="guideBtn.h"
     [attr.aria-label]="guideBtn.label"
     [attr.aria-pressed]="guideOpen"
+    (pointerenter)="onRemoteEnter()"
     (pointerdown)="onBtnPointerDown(guideBtn, $event)"
     (pointerup)="onBtnPointerUp()"
-    (pointerleave)="onBtnPointerUp()"
+    (pointerleave)="onBtnPointerUp(); onRemoteLeave()"
     (pointercancel)="onBtnPointerUp()"
     (click)="onGuideClick()"
   >
@@ -68,9 +95,10 @@
       [style.--w]="btn.w"
       [style.--h]="btn.h"
       [attr.aria-label]="btn.label"
+      (pointerenter)="onRemoteEnter()"
       (pointerdown)="onBtnPointerDown(btn, $event)"
       (pointerup)="onBtnPointerUp()"
-      (pointerleave)="onBtnPointerUp()"
+      (pointerleave)="onBtnPointerUp(); onRemoteLeave()"
       (pointercancel)="onBtnPointerUp()"
       (click)="onSoundClick(btn)"
     >
@@ -88,9 +116,10 @@
       [style.--h]="ch.h"
       [attr.aria-label]="ch.label"
       [attr.aria-pressed]="activeSlug === ch.slug"
+      (pointerenter)="onRemoteEnter()"
       (pointerdown)="onBtnPointerDown(ch, $event)"
       (pointerup)="onBtnPointerUp()"
-      (pointerleave)="onBtnPointerUp()"
+      (pointerleave)="onBtnPointerUp(); onRemoteLeave()"
       (pointercancel)="onBtnPointerUp()"
       (click)="onChannelClick(ch)"
     >

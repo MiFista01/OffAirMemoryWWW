@@ -33,6 +33,10 @@ type RemoteBtn = {
 })
 export class GuestComponent implements OnInit, OnDestroy {
   arrowVisible = false;
+  remoteVisible = false;
+  /** When false, motion/tap won't reveal the remote. */
+  remoteEnabled = true;
+  tvOn = true;
   zoomed = false;
   activeSlug = 'nickelodeon';
   pressedId: string | null = null;
@@ -124,8 +128,31 @@ export class GuestComponent implements OnInit, OnDestroy {
   ];
 
   private hideTimer?: ReturnType<typeof setTimeout>;
-  private readonly hideDelayMs = 1400;
+  private readonly hideDelayMs = 2400;
+  /** Min pointer travel (px) before wake on move — not every pixel. */
+  private readonly pointerWakePx = 28;
+  private wakePointerX = 0;
+  private wakePointerY = 0;
+  private wakePointerReady = false;
   private routeSub?: Subscription;
+  private tvOnSub?: Subscription;
+
+  /** Bezel lights on 384×216 art — bottom-right of CRT. Tweak x/y if off. */
+  readonly tvPowerBtn = {
+    id: 'tv-power',
+    x: 102,
+    y: 147,
+    w: 9,
+    h: 9,
+  };
+
+  readonly tvRemoteBtn = {
+    id: 'tv-remote',
+    x: 110,
+    y: 147,
+    w: 9,
+    h: 9,
+  };
 
   constructor(
     private router: Router,
@@ -135,9 +162,39 @@ export class GuestComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.syncSlugFromRoute();
+    this.tvOn = this.playback.isTvOn;
+    this.tvOnSub = this.playback.tvOn.subscribe((on) => {
+      this.tvOn = on;
+    });
     this.routeSub = this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe(() => this.syncSlugFromRoute());
+  }
+
+  tvPowerSrc(): string {
+    return encodeURI(
+      this.tvOn ? '/imgs/remote/turn on.webp' : '/imgs/remote/turn off.webp',
+    );
+  }
+
+  tvRemoteSrc(): string {
+    return encodeURI(
+      this.remoteEnabled
+        ? '/imgs/remote/remote on.webp'
+        : '/imgs/remote/remote off.webp',
+    );
+  }
+
+  onTvPowerClick(): void {
+    this.playback.togglePower();
+  }
+
+  onTvRemoteClick(): void {
+    this.remoteEnabled = !this.remoteEnabled;
+    if (!this.remoteEnabled) {
+      this.remoteVisible = false;
+      this.remoteHover = false;
+    }
   }
 
   btnSrc(btn: RemoteBtn): string {
@@ -165,6 +222,10 @@ export class GuestComponent implements OnInit, OnDestroy {
   onGuideClick(): void {
     this.pressedId = null;
     this.guideOpen = !this.guideOpen;
+    if (this.guideOpen) {
+      this.remoteVisible = false;
+      this.remoteHover = false;
+    }
   }
 
   onSoundClick(btn: RemoteBtn): void {
@@ -173,6 +234,7 @@ export class GuestComponent implements OnInit, OnDestroy {
   }
 
   onRemoteEnter(): void {
+    if (this.guideOpen || !this.remoteEnabled) return;
     this.remoteHover = true;
     this.showUi();
   }
@@ -183,9 +245,31 @@ export class GuestComponent implements OnInit, OnDestroy {
     this.scheduleHideUi();
   }
 
-  @HostListener('document:pointermove')
-  @HostListener('document:pointerdown')
-  onPointerActivity(): void {
+  @HostListener('document:pointerdown', ['$event'])
+  onPointerDown(ev: PointerEvent): void {
+    this.wakePointerX = ev.clientX;
+    this.wakePointerY = ev.clientY;
+    this.wakePointerReady = true;
+    this.onPointerActivity();
+  }
+
+  @HostListener('document:pointermove', ['$event'])
+  onPointerMove(ev: PointerEvent): void {
+    if (!this.wakePointerReady) {
+      this.wakePointerX = ev.clientX;
+      this.wakePointerY = ev.clientY;
+      this.wakePointerReady = true;
+      return;
+    }
+    const dx = ev.clientX - this.wakePointerX;
+    const dy = ev.clientY - this.wakePointerY;
+    if (Math.hypot(dx, dy) < this.pointerWakePx) return;
+    this.wakePointerX = ev.clientX;
+    this.wakePointerY = ev.clientY;
+    this.onPointerActivity();
+  }
+
+  private onPointerActivity(): void {
     this.showUi();
   }
 
@@ -202,6 +286,7 @@ export class GuestComponent implements OnInit, OnDestroy {
 
   onGuideClosed(): void {
     this.guideOpen = false;
+    this.remoteVisible = false;
   }
 
   onGuideChannelPick(slug: string): void {
@@ -218,10 +303,14 @@ export class GuestComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     clearTimeout(this.hideTimer);
     this.routeSub?.unsubscribe();
+    this.tvOnSub?.unsubscribe();
   }
 
   private showUi(): void {
     this.arrowVisible = true;
+    if (!this.guideOpen && this.remoteEnabled) {
+      this.remoteVisible = true;
+    }
     clearTimeout(this.hideTimer);
     if (!this.remoteHover) {
       this.scheduleHideUi();
@@ -232,6 +321,9 @@ export class GuestComponent implements OnInit, OnDestroy {
     clearTimeout(this.hideTimer);
     this.hideTimer = setTimeout(() => {
       this.arrowVisible = false;
+      if (!this.guideOpen) {
+        this.remoteVisible = false;
+      }
     }, this.hideDelayMs);
   }
 
