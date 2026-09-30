@@ -34,6 +34,8 @@ export type ChannelWatchHlsHost = {
   prepare503Timer?: ReturnType<typeof setTimeout>;
   prepare503Started: number;
   prepare503Count: number;
+  /** Last 503 timestamp — don't clear overlay on a stale LEVEL reload mid-seam. */
+  prepare503LastAt: number;
   stallTimer?: ReturnType<typeof setTimeout>;
   onWaiting: () => void;
   onStalled: () => void;
@@ -349,6 +351,7 @@ export class ChannelWatchHls {
     if (h.rebooting) return;
     const now = Date.now();
     if (!h.prepare503Started) h.prepare503Started = now;
+    h.prepare503LastAt = now;
     h.prepare503Count += 1;
     const elapsed = now - h.prepare503Started;
     // Up to ~2 min (DuckTales→Spider-Man cold seek on NAS/dev)
@@ -358,8 +361,11 @@ export class ChannelWatchHls {
           `[tv] playlist HTTP 503 — preparing (${Math.round(elapsed / 1000)}s, wait)`,
         );
       }
-      h.loading = true;
-      h.waitMessage = 'Следующая серия…';
+      // One blip / early solo-seam 503 → don't flash "Следующая серия" yet.
+      if (h.prepare503Count >= 2 || elapsed >= 1500) {
+        h.loading = true;
+        h.waitMessage = 'Следующая серия…';
+      }
       clearTimeout(h.prepare503Timer);
       const delay = Math.min(2000 + h.prepare503Count * 400, 6000);
       h.prepare503Timer = setTimeout(() => {
@@ -371,7 +377,34 @@ export class ChannelWatchHls {
     console.warn('[tv] playlist 503 too long — /start reattach');
     h.prepare503Started = 0;
     h.prepare503Count = 0;
+    h.prepare503LastAt = 0;
     h.rebootStream();
+  }
+
+  /**
+   * Drop seam overlay only when media is actually back — not on every live
+   * LEVEL reload (that cleared "Следующая серия" too early).
+   */
+  endPlaylistPreparing(reason: string): void {
+    const h = this.host;
+    const seamWait =
+      h.prepare503Started > 0 || h.waitMessage === 'Следующая серия…';
+    if (!seamWait) return;
+    // Live playlist polls fire LEVEL_LOADED constantly — ignore for overlay.
+    if (reason === 'level' || reason === 'manifest') return;
+    const last503 = h.prepare503LastAt || h.prepare503Started;
+    if (last503 && Date.now() - last503 < 1000) return;
+    const v = h.videoRef.nativeElement;
+    // Wait until we can paint frames again (not just a speculative frag fetch).
+    if (reason === 'frag' && v.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+      return;
+    }
+    h.prepare503Started = 0;
+    h.prepare503Count = 0;
+    h.prepare503LastAt = 0;
+    clearTimeout(h.prepare503Timer);
+    h.loading = false;
+    console.warn(`[tv] seam wait cleared (${reason})`);
   }
 
   attach(url: string): void {
@@ -415,6 +448,7 @@ export class ChannelWatchHls {
         h.frag404Streak = 0;
         h.lastFrag404Url = '';
         // Do NOT reset remanifestCount / badFragSn here — that restarted skip/remanifest thrash
+        // Seam overlay: cleared via frag/playing, not every manifest poll.
         if (keepSound) {
           video.muted = false;
           if (h.crt === 'waiting' || h.crt === 'off-air') {
@@ -426,6 +460,13 @@ export class ChannelWatchHls {
         } else {
           h.onHlsReady();
         }
+      });
+      // Append seam: clear overlay on real media, not live playlist polls.
+      h.hls.on(Hls.Events.FRAG_LOADED, () => {
+        this.endPlaylistPreparing('frag');
+      });
+      h.hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        this.endPlaylistPreparing('buffered');
       });
       h.hls.on(Hls.Events.ERROR, (_e, data) => {
         if (h.rebooting) return;
@@ -464,13 +505,32 @@ export class ChannelWatchHls {
             return;
           }
           if (code === 404 || code === 410) {
-            if (warmingUp) {
-              setTimeout(() => h.hls?.startLoad(), 1500);
+            // Brief wipe between encodes — wait like 503, don't /start-storm.
+            if (warmingUp || h.prepare503Started > 0) {
+              this.handlePlaylistPreparing();
+              return;
+            }
+            const now = Date.now();
+            if (!h.prepare503Started) h.prepare503Started = now;
+            h.prepare503LastAt = now;
+            h.prepare503Count += 1;
+            if (h.prepare503Count < 3) {
+              console.warn(
+                `[tv] playlist HTTP ${code} — wait/retry (${h.prepare503Count})`,
+              );
+              clearTimeout(h.prepare503Timer);
+              h.prepare503Timer = setTimeout(() => {
+                if (h.rebooting) return;
+                h.hls?.startLoad(-1);
+              }, 1200);
               return;
             }
             console.warn(
               `[tv] playlist HTTP ${code} — /start reattach (not off air)`,
             );
+            h.prepare503Started = 0;
+            h.prepare503Count = 0;
+            h.prepare503LastAt = 0;
             h.rebootStream();
             return;
           }
@@ -483,6 +543,12 @@ export class ChannelWatchHls {
             return;
           }
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            // Nest down / EBUSY crash → CONNECTION_REFUSED — wait, don't reboot loop.
+            const code = (data.response as { code?: number } | undefined)?.code;
+            if (!code || code === 0) {
+              this.handlePlaylistPreparing();
+              return;
+            }
             h.hls.startLoad();
             if (!warmingUp) this.onBufferIssue();
             return;

@@ -60,6 +60,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   private prepare503Timer?: ReturnType<typeof setTimeout>;
   private prepare503Started = 0;
   private prepare503Count = 0;
+  private prepare503LastAt = 0;
   private offAirRetryTimer?: ReturnType<typeof setTimeout>;
   private offAirRetryCount = 0;
   /** User turned CRT off via bezel — don't auto-retry until they turn it on. */
@@ -88,6 +89,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.lastFrag404Url = '';
     this.prepare503Started = 0;
     this.prepare503Count = 0;
+    this.prepare503LastAt = 0;
     clearTimeout(this.prepare503Timer);
   };
 
