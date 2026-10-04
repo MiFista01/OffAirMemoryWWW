@@ -17,12 +17,14 @@ import { io, Socket } from 'socket.io-client';
 export class SocketService {
   private sockets: Map<string, Socket> = new Map();
   private callbacks: Map<string, Map<string, Array<(...args: any[]) => void>>> = new Map();
+  /** Re-emit join payloads after every connect (incl. reconnect). */
+  private onConnectHooks: Map<string, Array<() => void>> = new Map();
 
   setConnection(url: string, queryParams?: Record<string, string>) {
     if (this.sockets.has(url)) {
       const existingSocket = this.sockets.get(url);
       if (existingSocket?.connected) {
-        console.log('✅ [SocketService] Already connected to:', url);
+        // Called on every seam-sync — stay quiet (Chrome was stacking ×80+).
         return;
       } else {
         console.log('⚠️ [SocketService] Socket exists but disconnected, reconnecting...');
@@ -33,15 +35,55 @@ export class SocketService {
 
     const socket = io(url, {
       query: queryParams,
-      transports: ["websocket", "polling"],
+      // Polling first — more reliable behind reverse proxies; then upgrade.
+      transports: ['polling', 'websocket'],
+      upgrade: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1_000,
+      reconnectionDelayMax: 12_000,
+      timeout: 20_000,
     });
 
-    socket.on('connect_error', (err) => console.error(`Error connecting to ${url}:`, err));
+    let lastErrLog = 0;
+    socket.on('connect_error', (err) => {
+      const now = Date.now();
+      if (now - lastErrLog < 30_000) return;
+      lastErrLog = now;
+      console.warn(`[SocketService] connect_error ${url}: ${err?.message ?? err}`);
+    });
     socket.on('connect', () => {
       console.log(`Connected to ${url}`);
+      for (const hook of this.onConnectHooks.get(url) ?? []) {
+        try {
+          hook();
+        } catch {
+          /* ignore */
+        }
+      }
+    });
+    socket.on('disconnect', (reason) => {
+      // Transport close / ping timeout — socket.io will reconnect; do not escalate TV.
+      if (reason === 'io server disconnect') {
+        socket.connect();
+      }
     });
 
     this.sockets.set(url, socket);
+  }
+
+  /** Register a callback that runs on every connect/reconnect for this URL. */
+  onConnect(url: string, cb: () => void): () => void {
+    const list = this.onConnectHooks.get(url) ?? [];
+    list.push(cb);
+    this.onConnectHooks.set(url, list);
+    return () => {
+      const cur = this.onConnectHooks.get(url) ?? [];
+      this.onConnectHooks.set(
+        url,
+        cur.filter((x) => x !== cb),
+      );
+    };
   }
 
   killConnect(url: string) {
@@ -51,6 +93,7 @@ export class SocketService {
       socket.removeAllListeners();
       this.sockets.delete(url);
       this.callbacks.delete(url);
+      this.onConnectHooks.delete(url);
     }
   }
 
@@ -61,6 +104,7 @@ export class SocketService {
     });
     this.sockets.clear();
     this.callbacks.clear();
+    this.onConnectHooks.clear();
   }
 
   sendMessage(url: string, eventName: string, data?: any): boolean {

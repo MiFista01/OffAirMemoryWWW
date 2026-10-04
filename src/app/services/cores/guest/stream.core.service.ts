@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { environment } from '@env';
-import { RequestsService } from '@services';
+import { RequestsService, SocketService } from '@services';
 import { Observable } from 'rxjs';
 
 export type StreamStatus =
@@ -8,6 +8,8 @@ export type StreamStatus =
   | 'starting'
   | 'idle'
   | 'off';
+
+export type StreamRecoverHint = 'wait' | 'hot' | 'hard' | 'none' | 'switch';
 
 export type StreamStartResponse = {
   channel: string;
@@ -21,6 +23,7 @@ export type StreamStartResponse = {
   status?: StreamStatus;
   pollAfterMs?: number;
   message?: string;
+  slot?: 'a' | 'b';
 };
 
 export type StreamStatusResponse = {
@@ -36,9 +39,36 @@ export type StreamStatusResponse = {
   message?: string;
 };
 
+export type StreamSocketStatus = {
+  channel: string;
+  status: 'live' | 'starting' | 'idle' | 'off' | 'seam';
+  hint: StreamRecoverHint;
+  episodeId?: number;
+  scheduleItemId?: number;
+  generation?: number;
+  ready?: boolean;
+  message?: string;
+  streamUrl?: string;
+  slot?: 'a' | 'b';
+  at: string;
+};
+
+export type StreamPlayIssue =
+  | 'stall'
+  | 'frag404'
+  | 'playlist404'
+  | 'buffering'
+  | 'ended';
+
 @Injectable({ providedIn: 'root' })
 export class StreamCoreService {
-  constructor(private readonly req: RequestsService) {}
+  private readonly socketUrl = `${environment.apiSocket}/stream`;
+  private issueCooldownUntil = 0;
+
+  constructor(
+    private readonly req: RequestsService,
+    private readonly sockets: SocketService,
+  ) {}
 
   private qs(opts?: { tz?: string; profile?: string; ensure?: boolean }): string {
     const tz = opts?.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -77,5 +107,66 @@ export class StreamCoreService {
     return this.req.Get<{ ok: boolean }>(
       `${environment.apiUrl}/stream/${encodeURIComponent(slug)}/heartbeat?${this.qs(opts)}`,
     );
+  }
+
+  /** Open /stream namespace and join channel room. */
+  connectWatch(
+    slug: string,
+    onStatus: (s: StreamSocketStatus) => void,
+    opts?: { tz?: string; profile?: string },
+  ): () => void {
+    this.sockets.setConnection(this.socketUrl);
+    const joinPayload = {
+      slug,
+      tz: opts?.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      profile: opts?.profile ?? '720p',
+    };
+    const join = () => {
+      this.sockets.sendMessage(this.socketUrl, 'stream:join', joinPayload);
+    };
+    const offStatus = this.sockets.onMessage(
+      this.socketUrl,
+      'stream:status',
+      onStatus,
+    );
+    // Re-join room after every reconnect — otherwise status push is silent.
+    const offConnect = this.sockets.onConnect(this.socketUrl, join);
+    join();
+    return () => {
+      this.sockets.sendMessage(this.socketUrl, 'stream:leave', { slug });
+      offConnect();
+      offStatus();
+    };
+  }
+
+  /** Debounced play problem → server recover hint. */
+  reportPlayIssue(
+    slug: string,
+    issue: StreamPlayIssue,
+    opts?: { tz?: string; profile?: string },
+  ): void {
+    const now = Date.now();
+    if (now < this.issueCooldownUntil) return;
+    this.issueCooldownUntil = now + 2500;
+    this.sockets.setConnection(this.socketUrl);
+    this.sockets.sendMessage(this.socketUrl, 'stream:play-issue', {
+      slug,
+      issue,
+      tz: opts?.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      profile: opts?.profile ?? '720p',
+    });
+  }
+
+  /** Ask server for fresh stream status (unstick seam overlay). */
+  requestSeamSync(
+    slug: string,
+    opts?: { tz?: string; profile?: string },
+  ): void {
+    this.sockets.setConnection(this.socketUrl);
+    this.sockets.sendMessage(this.socketUrl, 'stream:sync', {
+      slug,
+      tz: opts?.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      profile: opts?.profile ?? '720p',
+    });
   }
 }
