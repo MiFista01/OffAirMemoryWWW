@@ -7,7 +7,7 @@ import {
 import Hls from 'hls.js';
 import { firstValueFrom } from 'rxjs';
 
-/** Host surface for HLS attach/wait/recovery (`this as ChannelWatchHlsHost`). */
+  /** Host surface for HLS attach/wait/recovery (`this as ChannelWatchHlsHost`). */
 export type ChannelWatchHlsHost = {
   stream: StreamCoreService;
   videoRef: { nativeElement: HTMLVideoElement };
@@ -51,6 +51,10 @@ export type ChannelWatchHlsHost = {
   rebootStream(force?: boolean): void;
   /** True while seam/wait watchdog is armed (silent or overlay). */
   seamWatchActive?: boolean;
+  /** Dual-slot URL switch in flight. */
+  switchingSlot?: boolean;
+  /** Ms epoch — soft recover must not remanifest / rewind after slot switch. */
+  switchGraceUntil?: number;
 };
 
 /** HLS attach / wait / recovery — component owns the video element and CRT UI. */
@@ -121,6 +125,18 @@ export class ChannelWatchHls {
     return now - this.stuckSampleAt >= sec * 1000;
   }
 
+  /** Stuck in first seconds after dual-slot attach — NOT end-slate. */
+  isIntroStuck(maxSec = 20): boolean {
+    const v = this.host.videoRef?.nativeElement;
+    if (!v) return false;
+    const t = v.currentTime;
+    if (!Number.isFinite(t) || t > maxSec) return false;
+    const grace = this.host.switchGraceUntil ?? 0;
+    const recentAttach = Date.now() - this.host.attachAt < 45_000;
+    if (!recentAttach && Date.now() >= grace) return false;
+    return this.isMediaTimeStuck(5);
+  }
+
   markPlaying(): void {
     this.lastPlayingAt = Date.now();
     this.stuckSampleAt = Date.now();
@@ -163,6 +179,8 @@ export class ChannelWatchHls {
   private playlistGapUntil = 0;
   /** Debounce brief `waiting` blips during healthy live play. */
   private lastBufferNudgeAt = 0;
+  /** Hard gate — browser fires waiting/stalled hundreds/sec when frozen. */
+  private lastBufferIssueAt = 0;
 
   markPlaylistGap(sec = 12): void {
     this.playlistGapUntil = Math.max(
@@ -188,6 +206,21 @@ export class ChannelWatchHls {
     // Still have picture/buffer (or just played) — remanifest = short fragment restart.
     if (this.hasPlaybackAnchor()) {
       this.resumeIfPaused();
+      return;
+    }
+    // Just switched to next episode @0 — remanifest seeks live edge / rewinds intro.
+    if (h.switchGraceUntil && Date.now() < h.switchGraceUntil) {
+      console.warn('[tv] hot recover — post-switch nudge (keep @0)');
+      this.resumeIfPaused();
+      try {
+        hls.startLoad(this.isIntroStuck() ? 0 : -1);
+      } catch {
+        try {
+          hls.startLoad(0);
+        } catch {
+          /* ignore */
+        }
+      }
       return;
     }
     if (this.inPlaylistGap()) {
@@ -220,19 +253,13 @@ export class ChannelWatchHls {
             h.waitMessage = 'Подключаем эфир…';
           }
           this.handlePlaylistPreparing();
-          if (this.hotFailStreak >= 4) {
-            this.hotFailStreak = 0;
-            // One hard attempt, then gap so we don't /start storm.
-            this.markPlaylistGap(20);
-            h.rebootStream();
-            return;
-          }
+          // Never /start from hot-fail streak — that wipes preparing HLS → more 503.
           h.stream.requestSeamSync(h.slug);
           return;
         }
         if (!res.ok) {
           this.markPlaylistGap(10);
-          h.rebootStream();
+          h.stream.requestSeamSync(h.slug);
           return;
         }
         // Buffer may have returned while we probed — do not wipe the timeline.
@@ -262,45 +289,116 @@ export class ChannelWatchHls {
 
   onBufferIssue(): void {
     const h = this.host;
-    if (h.rebooting || h.loading) return;
+    if (h.rebooting) return;
     if (h.crt === 'off-air' || h.crt === 'powering-off') return;
+    // waiting/stalled fire in a tight loop on a frozen frame — never burn CPU.
+    const now = Date.now();
+    if (now - this.lastBufferIssueAt < 2_500) return;
+    this.lastBufferIssueAt = now;
 
-    // Frozen last frame (credits logo) — escalate, don't soft-ignore.
-    if (this.isMediaTimeStuck(8)) {
-      console.warn('[tv] media time stuck — stall recover');
-      this.recoverOrReboot();
+    const prepFor =
+      h.prepare503Started > 0 ? now - h.prepare503Started : 0;
+    // Overlay alone must not block forever; 503 escalate below.
+    if (h.loading && prepFor < 40_000 && h.prepare503Started === 0) {
+      if (!this.isMediaTimeStuck(8)) return;
+    }
+    if (prepFor >= 45_000 && h.prepare503Started > 0) {
+      if (h.switchingSlot) {
+        h.stream.requestSeamSync(h.slug);
+        return;
+      }
+      console.warn('[tv] 503 stuck — force /start from buffer watchdog');
+      // Do not clear prepare here — rebootStream clears only if /start commits.
+      h.rebootStream(true);
       return;
     }
 
-    // Brief waiting with real future buffer — ignore (do not ask server → hot).
+    // Brief waiting with real future buffer — ignore.
     if (this.hasPlaybackAnchor()) {
       this.resumeIfPaused();
       return;
     }
 
-    const now = Date.now();
+    // Intro freeze after dual-slot switch (Transformers stuck @0–2s).
+    // Must NOT report ended / startLoad(-1) — that kills the new show.
+    if (this.isIntroStuck()) {
+      if (now - this.lastBufferNudgeAt < 4_000) {
+        this.resumeIfPaused();
+        return;
+      }
+      this.lastBufferNudgeAt = now;
+      console.warn('[tv] media time stuck — intro watchdog (keep @0)');
+      this.resumeIfPaused();
+      try {
+        h.hls?.startLoad(0);
+      } catch {
+        /* ignore */
+      }
+      h.stream.reportPlayIssue(h.slug, 'buffering');
+      clearTimeout(h.stallTimer);
+      h.stallTimer = setTimeout(() => {
+        if (this.hasPlaybackAnchor()) return;
+        if (this.isIntroStuck()) {
+          console.warn('[tv] intro still stuck — /start reattach');
+          h.rebootStream(true);
+          return;
+        }
+        this.recoverOrReboot();
+      }, 12_000);
+      return;
+    }
+
+    // Frozen frame but playlist may still be fine (end-slate / NAS lag).
+    if (this.isMediaTimeStuck(8)) {
+      if (now - this.lastBufferNudgeAt < 12_000) {
+        this.resumeIfPaused();
+        return;
+      }
+      this.lastBufferNudgeAt = now;
+      console.warn('[tv] media time stuck — end-slate watchdog');
+      h.seamWatchActive = true;
+      this.resumeIfPaused();
+      if (h.prepare503Started === 0) {
+        h.hls?.startLoad(-1);
+      }
+      h.stream.reportPlayIssue(h.slug, 'ended');
+      h.stream.requestSeamSync(h.slug);
+      clearTimeout(h.stallTimer);
+      h.stallTimer = setTimeout(() => this.recoverOrReboot(), 25_000);
+      return;
+    }
+
     if (now - this.lastBufferNudgeAt < 8_000) {
       this.resumeIfPaused();
       return;
     }
     this.lastBufferNudgeAt = now;
 
-    // Prefer server hint over blind /start — only after real empty buffer.
     h.stream.reportPlayIssue(h.slug, 'buffering');
-    // First seconds after attach segments are still being written — do not reboot.
-    if (Date.now() - h.attachAt < 20_000) {
+    if (now - h.attachAt < 20_000) {
       this.resumeIfPaused();
       return;
     }
     this.resumeIfPaused();
     clearTimeout(h.stallTimer);
-    // NAS encode can stall briefly — wait longer before /start reboot
-    h.stallTimer = setTimeout(() => this.recoverOrReboot(), 12_000);
+    h.stallTimer = setTimeout(() => this.recoverOrReboot(), 20_000);
   }
 
   recoverOrReboot(): void {
     const h = this.host;
-    if (h.rebooting || h.loading) return;
+    if (h.rebooting) return;
+    const now = Date.now();
+    if (now - this.lastBufferIssueAt < 2_000) return;
+    this.lastBufferIssueAt = now;
+    const prepFor =
+      h.prepare503Started > 0 ? now - h.prepare503Started : 0;
+    if (h.loading && prepFor < 40_000 && h.prepare503Started === 0) {
+      if (!this.isMediaTimeStuck(8)) return;
+    }
+    if (prepFor >= 45_000) {
+      if (!h.switchingSlot) h.rebootStream(true);
+      return;
+    }
     if (h.crt === 'off-air' || h.crt === 'powering-off') return;
     if (this.hasPlaybackAnchor()) {
       this.resumeIfPaused();
@@ -312,35 +410,30 @@ export class ChannelWatchHls {
     // Soft only; hard only if server hint=hard or media truly stuck past seam watch.
     if (h.seamWatchActive) {
       console.warn('[tv] stall during seam — soft only (no /start)');
-      this.hotRecover();
+      h.stream.requestSeamSync(h.slug);
       clearTimeout(h.stallTimer);
       h.stallTimer = setTimeout(() => {
         if (this.hasPlaybackAnchor()) return;
-        if (h.seamWatchActive && !this.isMediaTimeStuck(12)) {
-          console.warn('[tv] seam stall still soft — request sync');
-          h.stream.requestSeamSync(h.slug);
-          this.hotRecover();
+        if (this.isMediaTimeStuck(12) || h.prepare503Started > 0) {
+          console.warn('[tv] seam stall — escalate /start');
+          h.rebootStream(true);
           return;
         }
-        h.rebootStream();
+        console.warn('[tv] seam stall still soft — request sync');
+        h.stream.requestSeamSync(h.slug);
       }, 45_000);
       return;
     }
 
-    // Brief underrun / WS blip while the cartoon was just playing — never /start.
-    // Hard only when the frame is frozen for real (credits / dead encode).
-    if (!this.isMediaTimeStuck(15) && this.msSincePlaying() < 90_000) {
+    // Brief underrun while picture still has future buffer — soft only.
+    // Frozen / no anchor → allow rebootStream (was blocked 90s by lastPlayingAt).
+    if (!this.isMediaTimeStuck(12) && this.hasPlaybackAnchor()) {
       console.warn('[tv] stall — soft only (recent play, not frozen)');
       this.hotRecover();
       clearTimeout(h.stallTimer);
       h.stallTimer = setTimeout(() => {
         if (this.hasPlaybackAnchor()) return;
-        if (!this.isMediaTimeStuck(15) && this.msSincePlaying() < 120_000) {
-          console.warn('[tv] stall — still soft (no freeze)');
-          this.hotRecover();
-          return;
-        }
-        h.rebootStream();
+        h.rebootStream(false);
       }, 25_000);
       return;
     }
@@ -355,7 +448,7 @@ export class ChannelWatchHls {
       clearTimeout(h.stallTimer);
       h.stallTimer = setTimeout(() => {
         if (this.hasPlaybackAnchor()) return;
-        h.rebootStream();
+        h.rebootStream(true);
       }, 18_000);
     }, 18_000);
   }
@@ -516,8 +609,9 @@ export class ChannelWatchHls {
   }
 
   /**
-   * Hole in live HLS: remanifest once. Many different SN 404s (zombie playlist
-   * after ffmpeg died) → /start immediately — don't remanifest forever.
+   * Hole in live HLS: remanifest / catch live edge.
+   * Many .ts 404s with a LIVE playlist are delete_segments lag (NAS) — NOT a dead
+   * encode. /start here kills ffmpeg → play/freeze stutter loops.
    */
   recoverMissingFragment(playlistUrl: string, sn?: number | string): void {
     const h = this.host;
@@ -526,46 +620,64 @@ export class ChannelWatchHls {
     if (now < h.recoverCooldownUntil) return;
 
     // Playing through buffer — lone edge 404s are delete_segments noise.
-    // Remanifest here = micro-repeat on the CRT.
-    if (this.hasPlaybackAnchor()) {
-      h.recoverCooldownUntil = now + 2_000;
+    if (this.hasPlaybackAnchor() || this.isActuallyPlaying()) {
+      h.recoverCooldownUntil = now + 3_000;
+      this.resumeIfPaused();
       return;
     }
 
-    if (now - h.frag404BurstStarted > 15_000) {
+    if (now - h.frag404BurstStarted > 20_000) {
       h.frag404BurstStarted = now;
       h.frag404Burst = 0;
     }
     h.frag404Burst += 1;
 
-    // Sliding window of dead .ts while encode dead → /start, not remanifest spam.
-    // Threshold 4: delete_segments often yields 1–2 benign 404s at the live edge.
-    if (h.frag404Burst >= 4 || h.remanifestCount >= 2) {
-      console.warn(
-        `[tv] ${h.frag404Burst} frag 404s — /start (encode likely dead)`,
-      );
-      h.recoverCooldownUntil = now + 8_000;
-      h.frag404Burst = 0;
-      h.remanifestCount = 0;
-      h.badFragSn = null;
-      h.rebootStream();
-      return;
-    }
+    // Probe playlist: if m3u8 is OK, only soft catch-up — never /start.
+    void (async () => {
+      let playlistDead = false;
+      try {
+        const probeUrl = `${playlistUrl}${playlistUrl.includes('?') ? '&' : '?'}_=${Date.now()}`;
+        const res = await fetch(probeUrl, {
+          method: 'GET',
+          cache: 'no-store',
+          mode: 'cors',
+        });
+        playlistDead =
+          res.status === 404 || res.status === 503 || res.status === 410;
+      } catch {
+        playlistDead = true;
+      }
 
-    if (sn != null && sn === h.badFragSn && h.remanifestCount >= 1) {
-      console.warn(
-        `[tv] fragment sn=${sn} still missing after remanifest — /start`,
-      );
-      h.recoverCooldownUntil = now + 8_000;
-      h.remanifestCount = 0;
-      h.badFragSn = null;
-      h.rebootStream();
-      return;
-    }
+      if (!playlistDead) {
+        h.recoverCooldownUntil = now + 4_000;
+        if (h.frag404Burst === 1 || h.frag404Burst % 6 === 0) {
+          console.warn(
+            `[tv] frag 404 burst=${h.frag404Burst} but playlist OK — soft catch-up (no /start)`,
+          );
+        }
+        this.recoverStaleHls(playlistUrl);
+        h.stream.requestSeamSync(h.slug);
+        return;
+      }
 
-    if (sn != null) h.badFragSn = sn;
-    h.recoverCooldownUntil = now + 1_200;
-    this.recoverStaleHls(playlistUrl);
+      // Playlist truly gone — only then escalate (after a real burst).
+      if (h.frag404Burst >= 8) {
+        console.warn(
+          `[tv] ${h.frag404Burst} frag 404s + dead playlist — /start`,
+        );
+        h.recoverCooldownUntil = now + 15_000;
+        h.frag404Burst = 0;
+        h.remanifestCount = 0;
+        h.badFragSn = null;
+        h.rebootStream(false);
+        return;
+      }
+
+      h.recoverCooldownUntil = now + 2_000;
+      if (sn != null) h.badFragSn = sn;
+      this.handlePlaylistPreparing();
+      h.stream.requestSeamSync(h.slug);
+    })();
   }
 
   /** Reload m3u8 and stay on live edge — do not seek mid-window. */
@@ -573,34 +685,32 @@ export class ChannelWatchHls {
     const h = this.host;
     const hls = h.hls;
     if (!hls || h.rebooting) return;
-    if (this.hasPlaybackAnchor()) {
+    if (this.hasPlaybackAnchor() || this.isActuallyPlaying()) {
       this.resumeIfPaused();
-      hls.startLoad(-1);
       return;
     }
 
     const now = Date.now();
     if (now - h.remanifestAt > 30_000) h.remanifestCount = 0;
-    if (now - h.remanifestAt < 5_000 && h.remanifestCount > 0) return;
+    if (now - h.remanifestAt < 8_000 && h.remanifestCount > 0) return;
 
     h.remanifestAt = now;
     h.remanifestCount += 1;
 
-    if (h.remanifestCount >= 2) {
-      console.warn('[tv] remanifest exhausted — /start reboot');
+    if (h.remanifestCount >= 4) {
+      console.warn('[tv] remanifest exhausted — seam sync (no /start)');
       h.remanifestCount = 0;
       h.badFragSn = null;
-      h.rebootStream();
+      h.stream.requestSeamSync(h.slug);
       return;
     }
 
-    // Prefer soft continue over wipe+remanifest.
     console.warn('[tv] stale HLS — soft startLoad');
     try {
       hls.startLoad(-1);
       this.resumeIfPaused();
     } catch {
-      if (!h.rebooting) h.rebootStream();
+      h.stream.requestSeamSync(h.slug);
     }
   }
 
@@ -612,51 +722,79 @@ export class ChannelWatchHls {
     // Never flash "Подключаем эфир…" / /start over a live cartoon.
     if (this.isActuallyPlaying() || this.hasPlaybackAnchor()) {
       this.markPlaylistGap(8);
-      h.hls?.startLoad(-1);
+      // Keep playing from buffer — do NOT startLoad (that spam-GETs 503 → red console).
       this.resumeIfPaused();
       return;
     }
-    // Frozen last frame during 503 — don't sit in loading forever.
-    if (this.isMediaTimeStuck(8)) {
-      console.warn('[tv] 503 + media stuck — hard reattach');
-      h.rebootStream(true);
-      return;
-    }
-    this.markPlaylistGap(12);
+    this.markPlaylistGap(20);
     const now = Date.now();
     if (!h.prepare503Started) h.prepare503Started = now;
+    // LEVEL_LOAD_ERROR can fire dozens/sec before stopLoad sticks — throttle count.
+    if (now - h.prepare503LastAt < 1_500 && h.prepare503Count > 0) {
+      try {
+        h.hls?.stopLoad();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     h.prepare503LastAt = now;
     h.prepare503Count += 1;
     const elapsed = now - h.prepare503Started;
-    // Escalate sooner — 120s left CRT frozen on credits logo.
-    if (elapsed >= 35_000 || h.prepare503Count >= 10) {
+    // Stop hls.js from reloading the dead m3u8 every ~2s (console 503 flood).
+    try {
+      h.hls?.stopLoad();
+    } catch {
+      /* ignore */
+    }
+    // Escalate — rebootStream clears prepare only when /start actually commits.
+    if (elapsed >= 45_000 || h.prepare503Count >= 15) {
+      if (h.switchingSlot) {
+        h.stream.requestSeamSync(h.slug);
+        return;
+      }
       console.warn('[tv] playlist 503 too long — /start reattach');
-      h.prepare503Started = 0;
-      h.prepare503Count = 0;
-      h.prepare503LastAt = 0;
-      this.markPlaylistGap(20);
       h.rebootStream(true);
       return;
     }
-    if (h.prepare503Count === 1 || h.prepare503Count % 5 === 0) {
+    if (h.prepare503Count === 1 || h.prepare503Count % 8 === 0) {
       console.warn(
         `[tv] playlist HTTP 503 — preparing (${Math.round(elapsed / 1000)}s, wait)`,
       );
+      // Wrong-slot after promote: server should answer switch + live URL.
+      h.stream.reportPlayIssue(h.slug, 'playlist404');
+      h.stream.requestSeamSync(h.slug);
     }
     // Soft wait only — no chyron while buffer may still play.
-    if (h.prepare503Count >= 2 || elapsed >= 1500) {
+    if (h.prepare503Count >= 3 || elapsed >= 4_000) {
       if (!this.hasPlaybackAnchor()) {
         h.loading = true;
         h.waitMessage = 'Подключаем эфир…';
       }
     }
     clearTimeout(h.prepare503Timer);
-    const delay = Math.min(2000 + h.prepare503Count * 400, 6000);
+    const delay = Math.min(3_000 + h.prepare503Count * 500, 10_000);
     h.prepare503Timer = setTimeout(() => {
       if (h.rebooting) return;
-      // Ask server — do not remanifest into a missing file.
+      const el = h.prepare503Started ? Date.now() - h.prepare503Started : 0;
+      if (el >= 45_000) {
+        if (h.switchingSlot) {
+          h.stream.requestSeamSync(h.slug);
+          return;
+        }
+        console.warn('[tv] playlist 503 timer — /start reattach');
+        h.rebootStream(true);
+        return;
+      }
+      // Probe live slot URL; do NOT re-enter handlePlaylistPreparing (count storm).
       h.stream.requestSeamSync(h.slug);
-      h.hls?.startLoad(-1);
+      if (!this.hasPlaybackAnchor() && h.prepare503Started > 0) {
+        try {
+          h.hls?.startLoad(-1);
+        } catch {
+          /* ignore */
+        }
+      }
     }, delay);
   }
 
@@ -697,7 +835,30 @@ export class ChannelWatchHls {
     const video = h.videoRef.nativeElement;
     const keepSound = h.soundOn;
     const fromStart = !!opts?.fromStart;
-    h.hls?.destroy();
+    try {
+      h.hls?.destroy();
+    } catch {
+      /* ignore */
+    }
+    h.hls = undefined;
+    // Hard flush MSE/SourceBuffers — otherwise prior slot credits can flash
+    // mid-next episode when the timeline holes / remanifest (X-Men under Kim).
+    try {
+      video.pause();
+    } catch {
+      /* ignore */
+    }
+    try {
+      video.removeAttribute('src');
+      video.load();
+    } catch {
+      /* ignore */
+    }
+    // Hard flush blanks the CRT — keep chyron until first frame (avoid black "эфир кончился").
+    if (fromStart || !this.hasPlaybackAnchor()) {
+      h.loading = true;
+      if (!h.waitMessage) h.waitMessage = 'Подключаем эфир…';
+    }
     h.soundOn = keepSound;
     video.muted = !keepSound;
     h.attachAt = Date.now();
@@ -722,10 +883,10 @@ export class ChannelWatchHls {
         liveSyncDurationCount: fromStart ? 2 : 8,
         liveMaxLatencyDurationCount: fromStart ? 12 : 24,
         maxLiveSyncPlaybackRate: 1.0,
-        // Thicker buffer = fewer silent micro-pauses on cold first cartoon
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
-        backBufferLength: 30,
+        // Prefetch ~18s (~5 MB @ 2.2 Mbps) — was 30/60 (more mobile waste).
+        maxBufferLength: 18,
+        maxMaxBufferLength: 36,
+        backBufferLength: 18,
         manifestLoadingMaxRetry: 12,
         manifestLoadingRetryDelay: 1000,
         // Don't hammer the same missing .ts (hls.js default can loop for ages)
@@ -739,11 +900,27 @@ export class ChannelWatchHls {
       h.hls.on(Hls.Events.MANIFEST_PARSED, () => {
         h.frag404Streak = 0;
         h.lastFrag404Url = '';
-        if (fromStart) {
-          console.warn('[tv] dual-slot attach from playlist start (keep intro)');
-        }
         // Do NOT reset remanifestCount / badFragSn here — that restarted skip/remanifest thrash
         // Seam overlay: cleared via frag/playing, not every manifest poll.
+        if (fromStart) {
+          // Fragments appear on LEVEL_LOADED — startPosition:0 alone often snaps to live edge.
+          h.hls?.once(Hls.Events.LEVEL_LOADED, (_ev, levelData) => {
+            const frags = levelData?.details?.fragments ?? [];
+            const first = frags[0];
+            const start =
+              first && Number.isFinite(first.start) ? first.start : 0;
+            console.warn(
+              `[tv] dual-slot attach from playlist start (keep intro @${start.toFixed(1)}s)`,
+            );
+            try {
+              h.hls?.startLoad(start);
+            } catch {
+              h.hls?.startLoad(0);
+            }
+          });
+        } else {
+          h.hls?.startLoad(-1);
+        }
         if (keepSound) {
           video.muted = false;
           if (h.crt === 'waiting' || h.crt === 'off-air') {
@@ -803,19 +980,23 @@ export class ChannelWatchHls {
           data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR
         ) {
           const code = (data.response as { code?: number } | undefined)?.code;
-          // 503 = preparing. 500 = nginx auth/mirror/upstream blip — same soft path.
-          // 404/410 = missing playlist mid-seam.
+          // 503 = preparing. 502 = proxy/nginx blip or missing dir.
+          // 500 = mirror/upstream. 404/410 = missing playlist mid-seam.
           if (
             code === 503 ||
+            code === 502 ||
             code === 500 ||
             code === 404 ||
             code === 410
           ) {
-            this.markPlaylistGap(12);
+            // Mark preparing ASAP — before any stall timer can /start-wipe.
+            if (!h.prepare503Started) h.prepare503Started = Date.now();
+            h.prepare503LastAt = Date.now();
+            this.markPlaylistGap(20);
             this.handlePlaylistPreparing();
-            // Throttled server hint — not on every hls retry tick.
-            if (h.prepare503Count === 1 || h.prepare503Count % 4 === 0) {
-              h.stream.reportPlayIssue(h.slug, 'playlist404');
+            // Rare server ping only — play-issue mid-prepare used to /start-wipe → more 503.
+            if (h.prepare503Count === 3 || h.prepare503Count % 12 === 0) {
+              h.stream.requestSeamSync(h.slug);
             }
             return;
           }
@@ -841,7 +1022,7 @@ export class ChannelWatchHls {
             this.handlePlaylistPreparing();
             return;
           }
-          if (!warmingUp) h.rebootStream();
+          if (!warmingUp) h.rebootStream(false);
         }
       });
       return;

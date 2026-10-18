@@ -74,23 +74,51 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   private seamWatchActive = false;
   /** Dual-slot URL switch in flight — blocks /start from onEnded. */
   private switchingSlot = false;
-  private onWaiting = () => this.hlsHelper.onBufferIssue();
-  private onStalled = () => this.hlsHelper.onBufferIssue();
-  /** Live HLS must not go OFF AIR on `ended` — usually encoder gap or empty window. */
-  private onEnded = () => {
-    if (this.loading || this.rebooting) return;
-    if (this.crt === 'off-air' || this.crt === 'powering-off') return;
-    // Dual-slot switch / seam — do NOT /start (kills standby / rewinds).
-    if (this.seamWatchActive || this.switchingSlot) {
-      console.warn('[tv] ended during seam/switch — soft sync only');
-      this.stream.requestSeamSync(this.slug);
-      this.hlsHelper.onBufferIssue();
-      return;
-    }
-    console.warn('[tv] unexpected ended — recover (not off air)');
-    void firstValueFrom(this.stream.start(this.slug)).catch(() => undefined);
+  /** Latest switch URL while one attach is in flight. */
+  private pendingSwitchUrl: string | null = null;
+  /** After silent slot attach — block remanifest//start that rewind intro. */
+  private switchGraceUntil = 0;
+  private lastEndedReportAt = 0;
+  private lastBufferEventAt = 0;
+  private onWaiting = () => {
+    const now = Date.now();
+    if (now - this.lastBufferEventAt < 2_500) return;
+    this.lastBufferEventAt = now;
     this.hlsHelper.onBufferIssue();
   };
+  private onStalled = () => {
+    const now = Date.now();
+    if (now - this.lastBufferEventAt < 2_500) return;
+    this.lastBufferEventAt = now;
+    this.hlsHelper.onBufferIssue();
+  };
+  /** Live HLS must not go OFF AIR on `ended` — usually encoder gap or empty window. */
+  private onEnded = () => {
+    if (this.rebooting || this.switchingSlot) return;
+    if (this.crt === 'off-air' || this.crt === 'powering-off') return;
+    // End-slate under overlay still needs server advance (was blocked by loading).
+    const now = Date.now();
+    if (now - this.lastEndedReportAt < 8_000) return;
+    this.lastEndedReportAt = now;
+    console.warn('[tv] media ended — report ended + seam sync');
+    this.seamWatchActive = true;
+    this.armSeamWatch();
+    this.stream.reportPlayIssue(this.slug, 'ended');
+    this.stream.requestSeamSync(this.slug);
+  };
+  private onVisibility = () => {
+    if (document.visibilityState !== 'visible') return;
+    // Tab was hidden — play() aborted (InvalidStateError Document hidden).
+    this.hlsHelper.resumeIfPaused();
+    if (this.hlsHelper.isIntroStuck()) {
+      try {
+        this.hls?.startLoad(0);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
   private onPlaying = () => {
     clearTimeout(this.stallTimer);
     clearTimeout(this.offAirRetryTimer);
@@ -173,7 +201,23 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       this.recoverCooldownUntil = 0;
       this.rebootCount = 0;
       this.offAirRetryCount = 0;
+      // Channel change — cancel in-flight dual-slot / stale CN URL on Jetix.
+      this.switchingSlot = false;
+      this.pendingSwitchUrl = null;
+      this.switchGraceUntil = 0;
+      this.streamUrl = '';
+      this.rebooting = false;
+      this.error = null;
+      try {
+        this.hls?.destroy();
+      } catch {
+        /* ignore */
+      }
+      this.hls = undefined;
       this.slug = slug;
+      console.warn('[tv] build 2026-04-06r7 intro-stuck');
+      document.removeEventListener('visibilitychange', this.onVisibility);
+      document.addEventListener('visibilitychange', this.onVisibility);
       if (this.userPoweredOff) {
         this.crt = 'off-air';
         this.playback.setTvOn(false);
@@ -181,6 +225,8 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
         return;
       }
       this.crt = 'waiting';
+      this.loading = true;
+      this.waitMessage = 'Подключаем эфир…';
       this.bindStreamSocket(slug);
       void this.bootStream();
     });
@@ -212,6 +258,18 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
         this.stream.requestSeamSync(this.slug);
         return;
       }
+      if (this.sameStreamPath(nextUrl, this.streamUrl)) {
+        // Already on the live slot — do not remanifest.
+        this.loading = false;
+        return;
+      }
+      // Just attached this slot — ignore echo switch / status thrash.
+      if (
+        Date.now() < this.switchGraceUntil &&
+        this.sameStreamPath(nextUrl, this.streamUrl)
+      ) {
+        return;
+      }
       console.warn(`[tv] dual-slot switch → ${nextUrl}`);
       this.seamWatchActive = true;
       this.seamWatchAttempt = 0;
@@ -221,29 +279,12 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     }
 
     // Live status with streamUrl after reconnect — reattach if URL slot changed.
-    if (
-      s.streamUrl &&
-      s.ready &&
-      (s.hint === 'none' || s.status === 'live') &&
-      this.streamUrl
-    ) {
-      const next = this.hlsHelper.toPlayableUrl(s.streamUrl);
-      const cur = this.streamUrl;
-      const nextPath = (() => {
-        try {
-          return new URL(next, window.location.origin).pathname;
-        } catch {
-          return next;
-        }
-      })();
-      const curPath = (() => {
-        try {
-          return new URL(cur, window.location.origin).pathname;
-        } catch {
-          return cur;
-        }
-      })();
-      if (nextPath !== curPath && !this.switchingSlot) {
+    if (s.streamUrl && s.ready && this.streamUrl) {
+      if (
+        !this.sameStreamPath(s.streamUrl, this.streamUrl) &&
+        !this.switchingSlot &&
+        Date.now() >= this.switchGraceUntil
+      ) {
         console.warn('[tv] status streamUrl≠current — dual-slot reattach');
         if (s.generation != null) this.lastSocketGen = s.generation;
         void this.switchToSlotUrl(s.streamUrl);
@@ -254,24 +295,12 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     if (s.generation != null && this.lastSocketGen != null) {
       if (s.generation > this.lastSocketGen) {
         this.lastSocketGen = s.generation;
-        // Picture still moving / dual-slot switch in flight — silent gen bump.
-        // Hard reattach mid-credits caused ending→rewind→ending loops.
-        if (
-          this.switchingSlot ||
-          this.seamWatchActive ||
-          this.hlsHelper.hasPlaybackAnchor() ||
-          (this.hlsHelper.isActuallyPlaying() &&
-            !this.hlsHelper.isMediaTimeStuck(6)) ||
-          this.hlsHelper.msSincePlaying() < 45_000
-        ) {
-          console.warn('[tv] cursor generation↑ — soft (playing through)');
-          this.seamWatchActive = true;
-          this.armSeamWatch();
-          return;
-        }
-        console.warn('[tv] cursor generation↑ — hard reattach');
-        this.clearSeamWatch();
-        this.hardReattach();
+        // Gen bumps on promote/cursor are normal — NEVER hard /start here.
+        // Hard reattach mid-play caused play→freeze→/start stutter loops.
+        console.warn('[tv] cursor generation↑ — soft (playing through)');
+        this.seamWatchActive = true;
+        this.armSeamWatch();
+        this.stream.requestSeamSync(this.slug);
         return;
       }
     }
@@ -316,6 +345,19 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       return;
     }
     if (s.hint === 'hard') {
+      if (Date.now() < this.switchGraceUntil) {
+        console.warn('[tv] hard hint ignored — post-switch grace');
+        return;
+      }
+      if (
+        s.streamUrl &&
+        s.ready &&
+        !this.sameStreamPath(s.streamUrl, this.streamUrl)
+      ) {
+        console.warn('[tv] hard hint with new slot — switch, no /start');
+        void this.switchToSlotUrl(s.streamUrl);
+        return;
+      }
       this.clearSeamWatch();
       this.hardReattach();
     }
@@ -391,19 +433,60 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
         this.hardReattach();
         return;
       }
+      // End-slate (CN logo): playlist may still be "alive" while guide moved on.
+      // Soft a few times, then force server advance — do not wait forever.
+      if (stuck && !dead) {
+        if (this.seamWatchAttempt === 2 || this.seamWatchAttempt === 4) {
+          console.warn(
+            '[tv] seam watch — stuck end-slate — report ended (advance)',
+          );
+          this.stream.reportPlayIssue(this.slug, 'ended');
+        }
+        if (this.seamWatchAttempt >= 6) {
+          console.warn(
+            '[tv] seam watch — end-slate stuck too long — /start advance',
+          );
+          this.clearSeamWatch();
+          this.rebootStream(false);
+          return;
+        }
+        console.warn(
+          `[tv] seam watch — soft only (stuck end-slate #${this.seamWatchAttempt})`,
+        );
+        this.armSeamWatch();
+        return;
+      }
       console.warn('[tv] seam watch — soft only (stuck=' + stuck + ', dead=' + dead + ')');
-      this.hlsHelper.hotRecover();
+      this.stream.requestSeamSync(this.slug);
       this.armSeamWatch();
     })();
   }
 
   /** Dual-slot: attach new playlist without /start (standby already encoding). */
+  private sameStreamPath(a?: string | null, b?: string | null): boolean {
+    if (!a || !b) return false;
+    const pathOf = (raw: string) => {
+      try {
+        return new URL(
+          this.hlsHelper.toPlayableUrl(raw),
+          window.location.origin,
+        ).pathname;
+      } catch {
+        return raw;
+      }
+    };
+    return pathOf(a) === pathOf(b);
+  }
+
   private async switchToSlotUrl(rawUrl: string): Promise<void> {
+    if (this.sameStreamPath(rawUrl, this.streamUrl)) return;
     if (this.switchingSlot) {
-      console.warn('[tv] dual-slot switch already in flight — skip');
+      this.pendingSwitchUrl = rawUrl;
+      console.warn('[tv] dual-slot switch queued (in flight)');
       return;
     }
     this.switchingSlot = true;
+    this.pendingSwitchUrl = null;
     this.bootGen += 1;
     const gen = this.bootGen;
     // Keep current picture while next slot is probed — no "эфир" flash on seam.
@@ -436,8 +519,28 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
         /* ignore */
       }
       this.hlsHelper.attach(url, { fromStart: true });
-      this.clearSeamWatch();
-      this.loading = false;
+      // Keep seam watch until onPlaying — attach alone is not recovery.
+      this.seamWatchActive = true;
+      this.armSeamWatch();
+      // keep loading until onPlaying (hard flush blanks CRT).
+      // ~25s: block remanifest / second attach that rewound Ginger to 0.
+      this.switchGraceUntil = Date.now() + 25_000;
+      // Intro often stalls if tab was hidden / play() aborted — nudge @0.
+      clearTimeout(this.stallTimer);
+      this.stallTimer = setTimeout(() => {
+        if (gen !== this.bootGen) return;
+        if (this.hlsHelper.hasPlaybackAnchor()) return;
+        if (!this.hlsHelper.isIntroStuck() && !this.hlsHelper.isMediaTimeStuck(6)) {
+          return;
+        }
+        console.warn('[tv] post-switch intro check — nudge @0');
+        this.hlsHelper.resumeIfPaused();
+        try {
+          this.hls?.startLoad(0);
+        } catch {
+          /* ignore */
+        }
+      }, 6_000);
       console.warn('[tv] dual-slot switch attached (silent, from start)');
     } catch (e) {
       console.warn('[tv] dual-slot switch failed', e);
@@ -447,6 +550,11 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     } finally {
       clearTimeout(overlayTimer);
       this.switchingSlot = false;
+      const queued = this.pendingSwitchUrl;
+      this.pendingSwitchUrl = null;
+      if (queued && queued !== this.streamUrl) {
+        void this.switchToSlotUrl(queued);
+      }
     }
   }
 
@@ -456,13 +564,13 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.hlsHelper.hotRecover();
   }
 
-  /** /start + full HLS reattach. */
+  /** Soft remanifest / seam sync — avoid force /start (stutter loops). */
   hardReattach(): void {
-    // Force: loading/seam overlay must not block hard recover (frozen credits logo).
     this.clearSeamWatch();
     this.loading = false;
     this.rebooting = false;
-    this.rebootStream(true);
+    // force=false: honor cooldown + 503 prepare blocks
+    this.rebootStream(false);
   }
 
   onVideoClick(): void {
@@ -590,9 +698,10 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.needsGesture = false;
     if (message) this.error = message;
 
+    // Only true end-of-day — do NOT match generic "закончен" / recover text.
     const scheduleEnded =
       !!message &&
-      /не в эфире|off air|Channel is off|закончен|Broadcast ended/i.test(
+      /Эфир на сегодня закончен|Broadcast ended|не в эфире|Channel is off air/i.test(
         message,
       );
     const noRetry =
@@ -779,45 +888,126 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   private frag404BurstStarted = 0;
   /** Min gap between hard /start reboots — stops WS-blip → /start storms. */
   private lastHardRebootAt = 0;
+  private last503BlockLogAt = 0;
+  /** Entry gate for rebootStream(false) — waiting/stalled must not enter 1000×/s. */
+  private lastRebootAttemptAt = 0;
+  private lastSoftStallLogAt = 0;
+
+  private clearPrepare503State(): void {
+    this.prepare503Started = 0;
+    this.prepare503Count = 0;
+    this.prepare503LastAt = 0;
+    clearTimeout(this.prepare503Timer);
+    this.hlsHelper.clearPlaylistGap();
+  }
+
+  private softStallLog(msg: string): void {
+    const now = Date.now();
+    if (now - this.lastSoftStallLogAt < 5_000) return;
+    this.lastSoftStallLogAt = now;
+    console.warn(msg);
+  }
 
   private rebootStream(force = false): void {
     if (this.rebooting) return;
-    // loading alone must not block 503 escalation / forced recover.
-    if (!force && this.loading && !this.prepare503Started) return;
+    const now = Date.now();
+    // Hard CPU gate — without this, frozen video × console.warn = fan spin.
+    if (!force && now - this.lastRebootAttemptAt < 3_000) return;
+    this.lastRebootAttemptAt = now;
+
+    const stuck =
+      this.hlsHelper.isMediaTimeStuck(8) ||
+      (!this.hlsHelper.hasPlaybackAnchor() && this.loading);
+    // Mid dual-slot attach — never /start (would wipe standby promote).
+    if (this.switchingSlot) {
+      this.softStallLog('[tv] stall — blocked /start during dual-slot switch');
+      return;
+    }
+    // Grace blocks soft /start, but intro freeze must escalate (Transformers @0).
+    if (!force && Date.now() < this.switchGraceUntil) {
+      if (this.hlsHelper.isIntroStuck()) {
+        console.warn('[tv] intro stuck in grace — force /start');
+        force = true;
+      } else {
+        this.softStallLog('[tv] stall — blocked /start during post-switch grace');
+        this.hlsHelper.resumeIfPaused();
+        return;
+      }
+    }
+    // loading alone must not block 503 escalation / forced recover / stuck frame.
+    if (!force && this.loading && !this.prepare503Started && !stuck) return;
     // Allow recover even from off-air / powering-off — playlist 404 often left us there
     if (this.crt === 'powering-off') {
       clearTimeout(this.crtTimer);
       this.crt = 'waiting';
     }
     if (!force && this.hlsHelper.isActuallyPlaying()) return;
+
+    const prepFor = this.prepare503Started
+      ? now - this.prepare503Started
+      : 0;
+    const in503 = this.prepare503Started > 0 || this.hlsHelper.inPlaylistGap();
+
+    // Playlist wipe / preparing — soft wait, then forced /start (never "escalate" then skip).
+    if (in503 && !force) {
+      const escalateMs = 45_000;
+      if (prepFor < escalateMs) {
+        if (now - this.last503BlockLogAt > 5_000) {
+          this.last503BlockLogAt = now;
+          console.warn(
+            `[tv] stall — blocked /start during 503/gap preparing (${Math.round(prepFor / 1000)}s)`,
+          );
+          this.seamWatchActive = true;
+          this.armSeamWatch();
+          this.stream.requestSeamSync(this.slug);
+        }
+        return;
+      }
+      console.warn(
+        `[tv] 503/gap ${Math.round(prepFor / 1000)}s — escalating /start`,
+      );
+      force = true;
+    }
+
+    // Frozen last frame while playlist is still servable — wait for dual-slot, no /start.
+    if (!force && stuck && this.seamWatchActive && prepFor === 0) {
+      this.softStallLog('[tv] stall — stuck on last frame, seam soft only');
+      this.stream.requestSeamSync(this.slug);
+      this.armSeamWatch();
+      return;
+    }
+    // Only skip when picture is still healthy — 1s blip must NOT block for 60s.
     if (
       !force &&
-      this.hlsHelper.msSincePlaying() < 60_000 &&
-      !this.hlsHelper.isMediaTimeStuck(15)
+      this.hlsHelper.msSincePlaying() < 20_000 &&
+      this.hlsHelper.hasPlaybackAnchor()
     ) {
-      console.warn('[tv] stall — skip /start (recent play)');
-      this.hotRecover();
+      this.softStallLog('[tv] stall — skip /start (recent play)');
+      this.stream.requestSeamSync(this.slug);
       return;
     }
     // Mid-seam stall → /start used to kill bridge encode. Soft unless force/stuck.
-    if (
-      !force &&
-      this.seamWatchActive &&
-      !this.switchingSlot &&
-      !this.hlsHelper.isMediaTimeStuck(12)
-    ) {
-      console.warn('[tv] stall — blocked /start during seam (soft sync)');
+    if (!force && this.seamWatchActive && !this.switchingSlot && !stuck) {
+      this.softStallLog('[tv] stall — blocked /start during seam (soft sync)');
       this.stream.requestSeamSync(this.slug);
-      this.hotRecover();
       return;
     }
 
-    const now = Date.now();
-    if (!force && now - this.lastHardRebootAt < 60_000) {
-      console.warn('[tv] stall — /start cooldown, soft only');
+    if (!force && now - this.lastHardRebootAt < 45_000 && !stuck) {
+      this.softStallLog('[tv] stall — /start cooldown, soft only');
       this.hotRecover();
       return;
     }
+    // Dead picture past cooldown — allow /start even if lastHard was recent.
+    if (force && now - this.lastHardRebootAt < 8_000) {
+      // Keep prepare/gap so the next escalate still has a timer — do NOT clear.
+      this.softStallLog('[tv] stall — force /start still cooling');
+      this.seamWatchActive = true;
+      this.armSeamWatch();
+      this.stream.requestSeamSync(this.slug);
+      return;
+    }
+
     if (now - this.rebootWindowStarted > 60_000) {
       this.rebootWindowStarted = now;
       this.rebootCount = 0;
@@ -830,17 +1020,15 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       return;
     }
 
+    // Clear prepare only once we actually commit to /start.
+    this.clearPrepare503State();
     this.lastHardRebootAt = now;
     this.rebooting = true;
     this.loading = false;
+    this.clearSeamWatch();
     if (this.crt === 'off-air') this.crt = 'waiting';
-    const recentPlay = this.hlsHelper.msSincePlaying() < 20_000;
-    console.warn(
-      recentPlay
-        ? '[tv] stall — /start soft (defer chyron)'
-        : '[tv] stall — /start + reattach HLS',
-    );
-    void this.bootStream({ deferChyronMs: recentPlay ? 3_000 : 0 });
+    console.warn('[tv] stall — /start + reattach HLS');
+    void this.bootStream({ deferChyronMs: 0 });
   }
 
   ngOnDestroy(): void {
@@ -854,6 +1042,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     clearTimeout(this.offAirRetryTimer);
     clearTimeout(this.prepare503Timer);
     this.stopHeartbeat();
+    document.removeEventListener('visibilitychange', this.onVisibility);
     const video = this.videoRef?.nativeElement;
     video?.removeEventListener('waiting', this.onWaiting);
     video?.removeEventListener('stalled', this.onStalled);
