@@ -489,7 +489,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.pendingSwitchUrl = null;
     this.bootGen += 1;
     const gen = this.bootGen;
-    // Keep current picture while next slot is probed — no "эфир" flash on seam.
+    // Keep current picture while next slot is probed — no connect chyron on seam.
     const hadPicture =
       this.hlsHelper.isActuallyPlaying() ||
       this.hlsHelper.hasPlaybackAnchor();
@@ -698,7 +698,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.needsGesture = false;
     if (message) this.error = message;
 
-    // Only true end-of-day — do NOT match generic "закончен" / recover text.
+    // Only true end-of-day — do NOT match generic recover / "ended" text.
     const scheduleEnded =
       !!message &&
       /Эфир на сегодня закончен|Broadcast ended|не в эфире|Channel is off air/i.test(
@@ -708,7 +708,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       scheduleEnded ||
       (!!message &&
         /No channel|not supported|HLS not supported|Power off/i.test(message));
-    // Schedule ended → "эфир закончился", no reconnect spam.
+    // Schedule ended → no reconnect spam.
     this.offAirCanReconnect = this.userPoweredOff || !scheduleEnded;
 
     this.crt = 'powering-off';
@@ -779,7 +779,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     this.error = null;
     clearTimeout(this.stallTimer);
     if (defer > 0) {
-      // Keep last frame — show "эфир" only if still not playing after a beat.
+      // Keep last frame — show connect chyron only if still not playing after a beat.
       this.loading = false;
       this.stallTimer = setTimeout(() => {
         if (gen !== this.bootGen) return;

@@ -719,7 +719,7 @@ export class ChannelWatchHls {
     const h = this.host;
     if (h.rebooting) return;
     // Picture still moving — nginx/Nest blip (e.g. former auth_request 500).
-    // Never flash "Подключаем эфир…" / /start over a live cartoon.
+    // Never flash connect chyron / /start over a live cartoon.
     if (this.isActuallyPlaying() || this.hasPlaybackAnchor()) {
       this.markPlaylistGap(8);
       // Keep playing from buffer — do NOT startLoad (that spam-GETs 503 → red console).
@@ -854,7 +854,7 @@ export class ChannelWatchHls {
     } catch {
       /* ignore */
     }
-    // Hard flush blanks the CRT — keep chyron until first frame (avoid black "эфир кончился").
+    // Hard flush blanks the CRT — keep chyron until first frame (avoid silent black screen).
     if (fromStart || !this.hasPlaybackAnchor()) {
       h.loading = true;
       if (!h.waitMessage) h.waitMessage = 'Подключаем эфир…';
