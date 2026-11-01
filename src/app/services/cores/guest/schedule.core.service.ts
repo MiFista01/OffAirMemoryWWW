@@ -37,8 +37,8 @@ export class ScheduleCoreService {
   constructor(private readonly req: RequestsService) {}
 
   todayGuide(tz?: string): Observable<GuideTodayResponse> {
-    const zone =
-      tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Europe/Tallinn';
+    // Station TZ (must match server AIR_TZ) — not the browser clock zone.
+    const zone = tz?.trim() || 'Europe/Tallinn';
     return this.req.Get<GuideTodayResponse>(
       `${environment.apiUrl}/schedule-day/guide/today?tz=${encodeURIComponent(zone)}`,
     );

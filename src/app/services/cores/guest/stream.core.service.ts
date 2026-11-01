@@ -70,8 +70,16 @@ export class StreamCoreService {
     private readonly sockets: SocketService,
   ) {}
 
+  /**
+   * Station air TZ (must match server AIR_TZ). Browser TZ was creating a
+   * separate encode key per viewer and wrong air-window math.
+   */
+  private stationTz(opts?: { tz?: string }): string {
+    return opts?.tz?.trim() || 'Europe/Tallinn';
+  }
+
   private qs(opts?: { tz?: string; profile?: string; ensure?: boolean }): string {
-    const tz = opts?.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const tz = this.stationTz(opts);
     const profile = opts?.profile ?? '720p';
     const parts = [
       `tz=${encodeURIComponent(tz)}`,
@@ -118,7 +126,7 @@ export class StreamCoreService {
     this.sockets.setConnection(this.socketUrl);
     const joinPayload = {
       slug,
-      tz: opts?.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      tz: this.stationTz(opts),
       profile: opts?.profile ?? '720p',
     };
     const join = () => {
@@ -152,7 +160,7 @@ export class StreamCoreService {
     this.sockets.sendMessage(this.socketUrl, 'stream:play-issue', {
       slug,
       issue,
-      tz: opts?.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      tz: this.stationTz(opts),
       profile: opts?.profile ?? '720p',
     });
   }
@@ -165,7 +173,7 @@ export class StreamCoreService {
     this.sockets.setConnection(this.socketUrl);
     this.sockets.sendMessage(this.socketUrl, 'stream:sync', {
       slug,
-      tz: opts?.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      tz: this.stationTz(opts),
       profile: opts?.profile ?? '720p',
     });
   }
