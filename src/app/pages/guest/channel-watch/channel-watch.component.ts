@@ -217,7 +217,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       }
       this.hls = undefined;
       this.slug = slug;
-      console.warn('[tv] build 2026-04-06r13 intro-lead');
+      console.warn('[tv] build 2026-04-06r14 anti-pingpong');
       document.removeEventListener('visibilitychange', this.onVisibility);
       document.addEventListener('visibilitychange', this.onVisibility);
       if (this.userPoweredOff) {
@@ -251,7 +251,6 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
     // Dual-slot switch first — must not be eaten by generation↑ soft path.
     if (s.hint === 'switch') {
-      if (s.generation != null) this.lastSocketGen = s.generation;
       const nextUrl = s.streamUrl;
       if (!nextUrl) {
         console.warn('[tv] switch hint without streamUrl — soft sync');
@@ -262,16 +261,25 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       }
       if (this.sameStreamPath(nextUrl, this.streamUrl)) {
         // Already on the live slot — do not remanifest.
+        if (s.generation != null) this.lastSocketGen = s.generation;
         this.loading = false;
         return;
       }
-      // Just attached this slot — ignore echo switch / status thrash.
-      if (
-        Date.now() < this.switchGraceUntil &&
-        this.sameStreamPath(nextUrl, this.streamUrl)
-      ) {
-        return;
+      // Post-switch grace: ignore a↔b thrash unless generation truly advanced.
+      // (Old check only ignored SAME url — opposite slot still ping-ponged.)
+      if (Date.now() < this.switchGraceUntil) {
+        const genBump =
+          s.generation != null &&
+          this.lastSocketGen != null &&
+          s.generation > this.lastSocketGen;
+        if (!genBump) {
+          console.warn(
+            '[tv] dual-slot switch ignored — post-switch grace (anti-pingpong)',
+          );
+          return;
+        }
       }
+      if (s.generation != null) this.lastSocketGen = s.generation;
       console.warn(`[tv] dual-slot switch → ${nextUrl}`);
       this.seamWatchActive = true;
       this.seamWatchAttempt = 0;
@@ -487,8 +495,17 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   private async switchToSlotUrl(rawUrl: string): Promise<void> {
     if (this.sameStreamPath(rawUrl, this.streamUrl)) return;
     if (this.switchingSlot) {
-      this.pendingSwitchUrl = rawUrl;
-      console.warn('[tv] dual-slot switch queued (in flight)');
+      // Never queue opposite slot — that produced a→b→a→b after attach.
+      console.warn('[tv] dual-slot switch dropped (in flight)');
+      return;
+    }
+    // Still in grace on another slot — drop echo flips.
+    if (
+      Date.now() < this.switchGraceUntil &&
+      this.streamUrl &&
+      !this.sameStreamPath(rawUrl, this.streamUrl)
+    ) {
+      console.warn('[tv] dual-slot switch dropped (grace anti-pingpong)');
       return;
     }
     this.switchingSlot = true;
@@ -570,11 +587,8 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     } finally {
       clearTimeout(overlayTimer);
       this.switchingSlot = false;
-      const queued = this.pendingSwitchUrl;
+      // Do not drain opposite-slot queue — that was the a↔b ping-pong.
       this.pendingSwitchUrl = null;
-      if (queued && queued !== this.streamUrl) {
-        void this.switchToSlotUrl(queued);
-      }
     }
   }
 
