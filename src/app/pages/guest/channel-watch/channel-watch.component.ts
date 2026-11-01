@@ -143,6 +143,8 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
   crt: CrtState = 'waiting';
   soundOn = false;
+  /** User set volume to 0 — must survive dual-slot attach / startPlayback. */
+  userPrefersMute = false;
   volumePercent = 0;
   volumeHudVisible = false;
   readonly volumeBarColor = {
@@ -215,7 +217,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       }
       this.hls = undefined;
       this.slug = slug;
-      console.warn('[tv] build 2026-04-06r7 intro-stuck');
+      console.warn('[tv] build 2026-04-06r11 seam-escalate');
       document.removeEventListener('visibilitychange', this.onVisibility);
       document.addEventListener('visibilitychange', this.onVisibility);
       if (this.userPoweredOff) {
@@ -307,10 +309,11 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     if (s.generation != null) this.lastSocketGen = s.generation;
 
     if (s.hint === 'wait') {
-      // Picture still flowing — silent seam watch (no chyron), but keep watchdog alive.
+      // Picture / last end-slate frame — silent hold until promote (no chyron flash).
       if (
         this.hlsHelper.isActuallyPlaying() ||
         this.hlsHelper.hasPlaybackAnchor() ||
+        this.hlsHelper.isMediaTimeStuck(8) ||
         (this.hlsHelper.msSincePlaying() < 30_000 &&
           !this.hlsHelper.isMediaTimeStuck(12))
       ) {
@@ -366,7 +369,12 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
   /** If seam wait never resolves, ask server again (then hard after a few tries). */
   private armSeamWatch(): void {
     clearTimeout(this.seamWatchTimer);
-    const delay = Math.min(8_000 + this.seamWatchAttempt * 4_000, 20_000);
+    // Stuck picture: escalate faster (~8+8+10s) — old 8+12+16+20×3 ≈ 96s freeze.
+    const stuckPic =
+      this.hlsHelper.isMediaTimeStuck(6) || this.prepare503Started > 0;
+    const delay = stuckPic
+      ? Math.min(6_000 + this.seamWatchAttempt * 2_000, 10_000)
+      : Math.min(8_000 + this.seamWatchAttempt * 4_000, 20_000);
     this.seamWatchTimer = setTimeout(() => this.onSeamWatchFire(), delay);
   }
 
@@ -403,18 +411,17 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     );
     this.stream.requestSeamSync(this.slug);
 
-    // Soft forever unless media stuck AND playlist dead — #4 must not hardReattach
-    // (that forced /start mid-seam → 503 / rewind).
+    // Soft briefly; stuck+dead/503 must escalate — old path froze ~96s on end-slate.
     void (async () => {
-      const stuck = this.hlsHelper.isMediaTimeStuck(12);
+      const stuck = this.hlsHelper.isMediaTimeStuck(8);
       if (!stuck) {
         this.hlsHelper.hotRecover();
         this.armSeamWatch();
         return;
       }
       const url = this.streamUrl;
-      let dead = !url;
-      if (url) {
+      let dead = !url || this.prepare503Started > 0;
+      if (url && !dead) {
         try {
           const probeUrl = `${url}${url.includes('?') ? '&' : '?'}_=${Date.now()}`;
           const res = await fetch(probeUrl, {
@@ -427,27 +434,26 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
           dead = true;
         }
       }
-      if (stuck && dead && this.seamWatchAttempt >= 4) {
-        console.warn('[tv] seam watch — stuck + dead playlist — hard reattach');
+      if (stuck && dead && this.seamWatchAttempt >= 2) {
+        console.warn('[tv] seam watch — stuck + dead/503 playlist — hard reattach');
         this.clearSeamWatch();
         this.hardReattach();
         return;
       }
-      // End-slate (CN logo): playlist may still be "alive" while guide moved on.
-      // Soft a few times, then force server advance — do not wait forever.
+      // End-slate: playlist 200 but currentTime frozen (credits / last .ts).
       if (stuck && !dead) {
-        if (this.seamWatchAttempt === 2 || this.seamWatchAttempt === 4) {
+        if (this.seamWatchAttempt === 1 || this.seamWatchAttempt === 2) {
           console.warn(
             '[tv] seam watch — stuck end-slate — report ended (advance)',
           );
           this.stream.reportPlayIssue(this.slug, 'ended');
         }
-        if (this.seamWatchAttempt >= 6) {
+        if (this.seamWatchAttempt >= 3) {
           console.warn(
             '[tv] seam watch — end-slate stuck too long — /start advance',
           );
           this.clearSeamWatch();
-          this.rebootStream(false);
+          this.rebootStream(true);
           return;
         }
         console.warn(
@@ -585,6 +591,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     }
     if (this.crt === 'powering-off') return;
     const v = this.videoRef.nativeElement;
+    this.userPrefersMute = false;
     this.soundOn = true;
     this.needsGesture = false;
     v.muted = false;
@@ -641,9 +648,11 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
     if (vol <= 0) {
       v.muted = true;
       this.soundOn = false;
+      this.userPrefersMute = true;
       this.flashVolumeHud();
       return;
     }
+    this.userPrefersMute = false;
     v.muted = false;
     this.soundOn = true;
     this.needsGesture = false;
@@ -802,13 +811,20 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
     try {
       const url = await this.hlsHelper.waitUntilPlayable(this.slug, gen);
-      if (gen !== this.bootGen) return;
+      if (gen !== this.bootGen) {
+        // Superseded by switch/reboot — clear latch or recovery stays dead forever.
+        this.rebooting = false;
+        return;
+      }
       clearTimeout(this.stallTimer);
       this.hlsHelper.attach(url);
       this.rebooting = false;
       this.loading = false;
     } catch (err: unknown) {
-      if (gen !== this.bootGen) return;
+      if (gen !== this.bootGen) {
+        this.rebooting = false;
+        return;
+      }
       clearTimeout(this.stallTimer);
       this.loading = false;
       this.rebooting = false;
@@ -837,7 +853,19 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
   private async startPlayback(): Promise<void> {
     const v = this.videoRef.nativeElement;
-    v.volume = 1;
+    // Dual-slot switch / remanifest used to force unmute — sound came back
+    // on every new cartoon after the user had set volume to 0.
+    if (this.userPrefersMute) {
+      v.muted = true;
+      this.soundOn = false;
+      try {
+        await v.play();
+      } catch {
+        this.needsGesture = true;
+      }
+      return;
+    }
+    if (v.volume <= 0) v.volume = 1;
     v.muted = false;
     try {
       await v.play();
@@ -845,13 +873,13 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       this.needsGesture = false;
       return;
     } catch {
-      /* muted fallback */
+      /* muted fallback (autoplay policy) */
     }
     v.muted = true;
     this.soundOn = false;
+    this.needsGesture = true;
     try {
       await v.play();
-      this.needsGesture = true;
     } catch {
       this.needsGesture = true;
     }
@@ -923,16 +951,19 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       this.softStallLog('[tv] stall — blocked /start during dual-slot switch');
       return;
     }
-    // Grace blocks soft /start, but intro freeze must escalate (Transformers @0).
+    // Post-switch grace: NEVER /start — that wiped warm slot B → 503 → ~96s freeze.
+    // Intro stuck: nudge startLoad(0) only; escalate after grace expires.
     if (!force && Date.now() < this.switchGraceUntil) {
+      this.softStallLog('[tv] stall — blocked /start during post-switch grace');
+      this.hlsHelper.resumeIfPaused();
       if (this.hlsHelper.isIntroStuck()) {
-        console.warn('[tv] intro stuck in grace — force /start');
-        force = true;
-      } else {
-        this.softStallLog('[tv] stall — blocked /start during post-switch grace');
-        this.hlsHelper.resumeIfPaused();
-        return;
+        try {
+          this.hls?.startLoad(0);
+        } catch {
+          /* ignore */
+        }
       }
+      return;
     }
     // loading alone must not block 503 escalation / forced recover / stuck frame.
     if (!force && this.loading && !this.prepare503Started && !stuck) return;
@@ -950,7 +981,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
 
     // Playlist wipe / preparing — soft wait, then forced /start (never "escalate" then skip).
     if (in503 && !force) {
-      const escalateMs = 45_000;
+      const escalateMs = stuck ? 20_000 : 45_000;
       if (prepFor < escalateMs) {
         if (now - this.last503BlockLogAt > 5_000) {
           this.last503BlockLogAt = now;

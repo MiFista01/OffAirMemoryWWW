@@ -18,6 +18,8 @@ export type ChannelWatchHlsHost = {
   rebooting: boolean;
   crt: string;
   soundOn: boolean;
+  /** User set volume to 0 — survive dual-slot attach/remanifest. */
+  userPrefersMute?: boolean;
   needsGesture: boolean;
   waitMessage: string;
   meta: { episodeId?: number; offsetSec?: number };
@@ -208,6 +210,12 @@ export class ChannelWatchHls {
       this.resumeIfPaused();
       return;
     }
+    // Server holding for guide catch-up / promote defer — remanifest rewinds credits.
+    if (h.seamWatchActive) {
+      console.warn('[tv] hot recover blocked — seam hold');
+      this.resumeIfPaused();
+      return;
+    }
     // Just switched to next episode @0 — remanifest seeks live edge / rewinds intro.
     if (h.switchGraceUntil && Date.now() < h.switchGraceUntil) {
       console.warn('[tv] hot recover — post-switch nudge (keep @0)');
@@ -302,8 +310,11 @@ export class ChannelWatchHls {
     if (h.loading && prepFor < 40_000 && h.prepare503Started === 0) {
       if (!this.isMediaTimeStuck(8)) return;
     }
-    if (prepFor >= 45_000 && h.prepare503Started > 0) {
-      if (h.switchingSlot) {
+    if (
+      h.prepare503Started > 0 &&
+      prepFor >= (this.isMediaTimeStuck(6) ? 20_000 : 45_000)
+    ) {
+      if (h.switchingSlot || Date.now() < (h.switchGraceUntil ?? 0)) {
         h.stream.requestSeamSync(h.slug);
         return;
       }
@@ -350,7 +361,7 @@ export class ChannelWatchHls {
 
     // Frozen frame but playlist may still be fine (end-slate / NAS lag).
     if (this.isMediaTimeStuck(8)) {
-      if (now - this.lastBufferNudgeAt < 12_000) {
+      if (now - this.lastBufferNudgeAt < 8_000) {
         this.resumeIfPaused();
         return;
       }
@@ -358,13 +369,13 @@ export class ChannelWatchHls {
       console.warn('[tv] media time stuck — end-slate watchdog');
       h.seamWatchActive = true;
       this.resumeIfPaused();
-      if (h.prepare503Started === 0) {
-        h.hls?.startLoad(-1);
-      }
+      // Remanifest (-1) on credits rewinds the ending during promote-defer.
+      // Keep last frame; server switch / seam sync advances — but don't wait 45s.
+      console.warn('[tv] end-slate — hold last frame (no remanifest)');
       h.stream.reportPlayIssue(h.slug, 'ended');
       h.stream.requestSeamSync(h.slug);
       clearTimeout(h.stallTimer);
-      h.stallTimer = setTimeout(() => this.recoverOrReboot(), 25_000);
+      h.stallTimer = setTimeout(() => this.recoverOrReboot(), 18_000);
       return;
     }
 
@@ -747,9 +758,12 @@ export class ChannelWatchHls {
     } catch {
       /* ignore */
     }
-    // Escalate — rebootStream clears prepare only when /start actually commits.
-    if (elapsed >= 45_000 || h.prepare503Count >= 15) {
-      if (h.switchingSlot) {
+    // Escalate sooner when picture already frozen (was 45s → ~96s with seam soft).
+    const stuckPic = this.isMediaTimeStuck(6);
+    const escalateMs = stuckPic ? 20_000 : 45_000;
+    const escalateCount = stuckPic ? 8 : 15;
+    if (elapsed >= escalateMs || h.prepare503Count >= escalateCount) {
+      if (h.switchingSlot || Date.now() < (h.switchGraceUntil ?? 0)) {
         h.stream.requestSeamSync(h.slug);
         return;
       }
@@ -833,7 +847,7 @@ export class ChannelWatchHls {
   attach(url: string, opts?: { fromStart?: boolean }): void {
     const h = this.host;
     const video = h.videoRef.nativeElement;
-    const keepSound = h.soundOn;
+    const keepSound = h.soundOn && !h.userPrefersMute;
     const fromStart = !!opts?.fromStart;
     try {
       h.hls?.destroy();
