@@ -516,7 +516,7 @@ export class ChannelWatchHls {
         }
         await this.waitUntilOk(url, gen);
         if (gen !== h.bootGen) throw new Error('cancelled');
-        return url;
+        return url; // cold boot always attaches separately
       }
 
       h.waitMessage =
@@ -533,20 +533,42 @@ export class ChannelWatchHls {
 
   /**
    * Wait until m3u8 has a small cushion of real .ts (not just the first one).
-   * Cold encode with -re is slow — attaching on 1 segment = micro-pauses on first cartoon.
-   * Probe from the *end* (live edge) — delete_segments often 404s old MEDIA-SEQUENCE entries.
+   * Returns fromStart=true only when the *head* of the window is also on disk —
+   * otherwise dual-slot attach@0 storms 404 on deleted intro segments.
    */
-  async waitUntilOk(url: string, gen: number, tries = 90): Promise<void> {
+  async waitUntilOk(
+    url: string,
+    gen: number,
+    tries = 90,
+  ): Promise<{ fromStart: boolean }> {
     const h = this.host;
     const playlistUrl = new URL(url, window.location.origin).href;
     let last = 0;
     let withSegs = 0;
-    let okStreak = 0;
+    let tailStreak = 0;
+    let headStreak = 0;
     const minSegs = 3;
     const needOkStreak = 2;
 
+    const probeSeg = async (seg: string): Promise<boolean> => {
+      const segUrl = new URL(seg, playlistUrl).href;
+      const segRes = await fetch(segUrl, {
+        method: 'GET',
+        cache: 'no-store',
+        mode: 'cors',
+        headers: { Range: 'bytes=0-0' },
+      });
+      last = segRes.status;
+      try {
+        await segRes.body?.cancel();
+      } catch {
+        /* ignore */
+      }
+      return segRes.ok || segRes.status === 206;
+    };
+
     for (let i = 0; i < tries; i++) {
-      if (gen !== h.bootGen) return;
+      if (gen !== h.bootGen) return { fromStart: false };
       try {
         const res = await fetch(playlistUrl, {
           method: 'GET',
@@ -555,7 +577,8 @@ export class ChannelWatchHls {
         });
         last = res.status;
         if (!res.ok) {
-          okStreak = 0;
+          tailStreak = 0;
+          headStreak = 0;
           await this.delay(500);
           continue;
         }
@@ -567,42 +590,49 @@ export class ChannelWatchHls {
           .filter((l) => !!l && !l.startsWith('#') && /\.ts($|\?)/i.test(l));
         if (segs.length < minSegs) {
           withSegs = 0;
-          okStreak = 0;
+          tailStreak = 0;
+          headStreak = 0;
           await this.delay(500);
           continue;
         }
         withSegs += 1;
 
-        // Newest first — oldest sliding-window entries are often already deleted
-        const candidates = [...segs].reverse().slice(0, 5);
-        let playable = false;
-        for (const seg of candidates) {
-          const segUrl = new URL(seg, playlistUrl).href;
-          const segRes = await fetch(segUrl, {
-            method: 'GET',
-            cache: 'no-store',
-            mode: 'cors',
-            headers: { Range: 'bytes=0-0' },
-          });
-          last = segRes.status;
-          try {
-            await segRes.body?.cancel();
-          } catch {
-            /* ignore */
-          }
-          if (segRes.ok || segRes.status === 206) {
-            playable = true;
+        // Tail (live edge) must work — otherwise folder mid-wipe.
+        let tailOk = false;
+        for (const seg of [...segs].reverse().slice(0, 5)) {
+          if (await probeSeg(seg)) {
+            tailOk = true;
             break;
           }
         }
 
-        if (playable) {
-          okStreak += 1;
-          if (okStreak >= needOkStreak) return;
+        // Head = oldest listed — needed for dual-slot intro attach.
+        let headOk = false;
+        for (const seg of segs.slice(0, 3)) {
+          if (await probeSeg(seg)) {
+            headOk = true;
+            break;
+          }
+        }
+
+        if (tailOk) {
+          tailStreak += 1;
+          if (headOk) headStreak += 1;
+          else headStreak = 0;
+
+          if (headStreak >= needOkStreak) {
+            return { fromStart: true };
+          }
+          // Standby burned past intro — attach live edge, skip 404 storm @0.
+          if (tailStreak >= needOkStreak + 2 && headStreak === 0) {
+            console.warn(
+              '[tv] playlist head .ts gone — attach live edge (no intro seek)',
+            );
+            return { fromStart: false };
+          }
         } else {
-          okStreak = 0;
-          // Playlist has segments for a few polls but all probed .ts 404 —
-          // do NOT attach: that freezes on one frame and storms 404s.
+          tailStreak = 0;
+          headStreak = 0;
           if (withSegs >= 6) {
             console.warn(
               '[tv] playlist segs all 404 — keep waiting (likely mid-wipe)',
@@ -611,7 +641,8 @@ export class ChannelWatchHls {
           }
         }
       } catch (e) {
-        okStreak = 0;
+        tailStreak = 0;
+        headStreak = 0;
         console.warn('[tv] waitUntilOk blip', e);
       }
       await this.delay(500);
@@ -661,6 +692,23 @@ export class ChannelWatchHls {
 
       if (!playlistDead) {
         h.recoverCooldownUntil = now + 4_000;
+        // Right after dual-slot intro seek: head .ts often deleted — jump live edge.
+        if (
+          Date.now() < (h.switchGraceUntil ?? 0) &&
+          h.frag404Burst >= 2
+        ) {
+          console.warn(
+            '[tv] frag 404 during post-switch — abandon intro, live edge',
+          );
+          try {
+            h.hls?.startLoad(-1);
+          } catch {
+            this.recoverStaleHls(playlistUrl);
+          }
+          this.resumeIfPaused();
+          h.stream.requestSeamSync(h.slug);
+          return;
+        }
         if (h.frag404Burst === 1 || h.frag404Burst % 6 === 0) {
           console.warn(
             `[tv] frag 404 burst=${h.frag404Burst} but playlist OK — soft catch-up (no /start)`,

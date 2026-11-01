@@ -217,7 +217,7 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       }
       this.hls = undefined;
       this.slug = slug;
-      console.warn('[tv] build 2026-04-06r11 seam-escalate');
+      console.warn('[tv] build 2026-04-06r12 slot-probe');
       document.removeEventListener('visibilitychange', this.onVisibility);
       document.addEventListener('visibilitychange', this.onVisibility);
       if (this.userPoweredOff) {
@@ -516,7 +516,9 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       this.waitMessage = 'Подключаем эфир…';
     }, hadPicture ? 4_500 : 800);
     try {
-      await this.hlsHelper.waitUntilOk(url, gen);
+      // Probe a↔b readiness: m3u8 alone is not enough — need real .ts.
+      // fromStart only if head segments exist (else live edge, no 404 storm).
+      const ready = await this.hlsHelper.waitUntilOk(url, gen);
       if (gen !== this.bootGen) return;
       this.streamUrl = url;
       try {
@@ -524,30 +526,38 @@ export class ChannelWatchComponent implements AfterViewInit, OnDestroy {
       } catch {
         /* ignore */
       }
-      this.hlsHelper.attach(url, { fromStart: true });
+      const fromStart = ready.fromStart;
+      this.hlsHelper.attach(url, { fromStart });
       // Keep seam watch until onPlaying — attach alone is not recovery.
       this.seamWatchActive = true;
       this.armSeamWatch();
       // keep loading until onPlaying (hard flush blanks CRT).
       // ~25s: block remanifest / second attach that rewound Ginger to 0.
       this.switchGraceUntil = Date.now() + 25_000;
-      // Intro often stalls if tab was hidden / play() aborted — nudge @0.
+      // Intro nudge only when we intentionally sought playlist head.
       clearTimeout(this.stallTimer);
-      this.stallTimer = setTimeout(() => {
-        if (gen !== this.bootGen) return;
-        if (this.hlsHelper.hasPlaybackAnchor()) return;
-        if (!this.hlsHelper.isIntroStuck() && !this.hlsHelper.isMediaTimeStuck(6)) {
-          return;
-        }
-        console.warn('[tv] post-switch intro check — nudge @0');
-        this.hlsHelper.resumeIfPaused();
-        try {
-          this.hls?.startLoad(0);
-        } catch {
-          /* ignore */
-        }
-      }, 6_000);
-      console.warn('[tv] dual-slot switch attached (silent, from start)');
+      if (fromStart) {
+        this.stallTimer = setTimeout(() => {
+          if (gen !== this.bootGen) return;
+          if (this.hlsHelper.hasPlaybackAnchor()) return;
+          if (
+            !this.hlsHelper.isIntroStuck() &&
+            !this.hlsHelper.isMediaTimeStuck(6)
+          ) {
+            return;
+          }
+          console.warn('[tv] post-switch intro check — nudge @0');
+          this.hlsHelper.resumeIfPaused();
+          try {
+            this.hls?.startLoad(0);
+          } catch {
+            /* ignore */
+          }
+        }, 6_000);
+      }
+      console.warn(
+        `[tv] dual-slot switch attached (silent, ${fromStart ? 'from start' : 'live edge'})`,
+      );
     } catch (e) {
       console.warn('[tv] dual-slot switch failed', e);
       this.seamWatchActive = true;
